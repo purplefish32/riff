@@ -70,6 +70,7 @@ type App struct {
 	undoTrack        *types.Track
 	undoPos          int
 	undoTrackPos     int
+	loading          bool
 	client           *api.Client
 	player           *player.Player
 	likes            *persistence.LikedStore
@@ -157,6 +158,7 @@ func (a App) playPos(pos int) (App, tea.Cmd) {
 	a.nowPlaying.position = 0
 	a.nowPlaying.duration = 0
 	a.err = nil
+	a.loading = true
 	trackID := track.ID
 	q := qualities[a.quality]
 	return a, func() tea.Msg {
@@ -742,6 +744,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case streamURLMsg:
+		a.loading = false
 		if msg.err != nil {
 			a.err = msg.err
 			return a, nil
@@ -981,7 +984,12 @@ func (a App) renderDownloadsView() string {
 func (a App) View() string {
 	header := titleStyle.Render("♫ riff")
 
-	np := a.nowPlaying.View(a.width)
+	var np string
+	if a.loading {
+		np = nowPlayingStyle.Render(dimStyle.Render("  Loading stream..."))
+	} else {
+		np = a.nowPlaying.View(a.width)
+	}
 	tabBar := a.renderTabBar()
 
 	errView := ""
