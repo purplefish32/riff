@@ -73,7 +73,7 @@ func main() {
 	qs := persistence.NewQueueStore()
 
 	app := ui.NewApp(client, p, likes, dl, cfg, qs)
-	prog := tea.NewProgram(app, tea.WithAltScreen())
+	prog := tea.NewProgram(app, tea.WithAltScreen(), tea.WithMouseCellMotion())
 
 	dl.SetOnUpdate(func() {
 		prog.Send(ui.DownloadUpdateMsg{})

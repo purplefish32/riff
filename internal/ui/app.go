@@ -722,6 +722,90 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.height = msg.Height
 		return a, nil
 
+	case tea.MouseMsg:
+		if a.mode != modeNormal {
+			return a, nil
+		}
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			if a.activeTab == tabQueue && a.queueCursor > 0 {
+				a.queueCursor--
+				visibleRows := a.height - 12
+				if visibleRows < 1 {
+					visibleRows = 1
+				}
+				if a.queueCursor < a.queueScrollOffset {
+					a.queueScrollOffset = a.queueCursor
+				}
+			}
+			if a.activeTab == tabLiked && a.likedCursor > 0 {
+				a.likedCursor--
+				visibleRows := a.height - 12
+				if visibleRows < 1 {
+					visibleRows = 1
+				}
+				if a.likedCursor < a.likedScrollOffset {
+					a.likedScrollOffset = a.likedCursor
+				}
+			}
+		case tea.MouseButtonWheelDown:
+			if a.activeTab == tabQueue && a.queueCursor < len(a.tracklist)-1 {
+				a.queueCursor++
+				visibleRows := a.height - 12
+				if visibleRows < 1 {
+					visibleRows = 1
+				}
+				if a.queueCursor >= a.queueScrollOffset+visibleRows {
+					a.queueScrollOffset = a.queueCursor - visibleRows + 1
+				}
+			}
+			if a.activeTab == tabLiked && a.likedCursor < len(a.likes.Tracks)-1 {
+				a.likedCursor++
+				visibleRows := a.height - 12
+				if visibleRows < 1 {
+					visibleRows = 1
+				}
+				if a.likedCursor >= a.likedScrollOffset+visibleRows {
+					a.likedScrollOffset = a.likedCursor - visibleRows + 1
+				}
+			}
+		case tea.MouseButtonLeft:
+			// Tab bar is at row 2 (0-indexed)
+			if msg.Y == 2 {
+				// Determine which tab was clicked based on approximate x positions
+				// Tab labels: "1:Queue(N)", "2:Liked(N)", "3:Downloads"
+				// Each tab is separated by "│"; rough x breakpoints
+				if msg.X < 15 {
+					a.activeTab = tabQueue
+					a.saveUIState()
+				} else if msg.X < 28 {
+					a.activeTab = tabLiked
+					a.saveUIState()
+				} else {
+					a.activeTab = tabDownloads
+					a.saveUIState()
+				}
+			} else if msg.Y >= 5 {
+				// Content area starts around row 5 (header row 4, then tracks)
+				// Row 5 = track header, row 6 onwards = tracks
+				contentRow := msg.Y - 6
+				if contentRow >= 0 {
+					if a.activeTab == tabQueue {
+						idx := a.queueScrollOffset + contentRow
+						if idx >= 0 && idx < len(a.tracklist) {
+							a.queueCursor = idx
+						}
+					} else if a.activeTab == tabLiked {
+						idx := a.likedScrollOffset + contentRow
+						if idx >= 0 && idx < len(a.likes.Tracks) {
+							a.likedCursor = idx
+						}
+					}
+				}
+			}
+		}
+		return a, nil
+
 	case tickMsg:
 		a = a.syncNowPlaying()
 		if a.statusTicks > 0 {
