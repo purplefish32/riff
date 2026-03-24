@@ -1261,9 +1261,9 @@ func (a App) renderDownloadsView() string {
 }
 
 func (a App) View() string {
-	logo := titleStyle.Render("♫ ╦═╗╦╔═╗╔═╗") + "\n" +
-		titleStyle.Render("  ╠╦╝║╠╣ ╠╣ ") + "\n" +
-		titleStyle.Render("  ╩╚═╩╚  ╚  ")
+	logo := titleStyle.Render("╦═╗╦╔═╗╔═╗") + "\n" +
+		titleStyle.Render("╠╦╝║╠╣ ╠╣ ") + "\n" +
+		titleStyle.Render("╩╚═╩╚  ╚  ")
 	if !a.online {
 		logo += "  " + errorStyle.Render("OFFLINE")
 	}
