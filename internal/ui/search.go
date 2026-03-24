@@ -162,6 +162,18 @@ type trackCols struct {
 }
 
 func computeTrackCols(width int) trackCols {
+	// Below 40 cols: minimal layout — title only, no number or artist
+	if width < 40 {
+		avail := width - 4
+		if avail < 10 {
+			avail = 10
+		}
+		return trackCols{
+			title:     avail,
+			showAlbum: false,
+			showYear:  false,
+		}
+	}
 	// Below 60 cols: hide album and year columns
 	if width < 60 {
 		fixed := colLike + colNum + colDuration + 4
@@ -217,17 +229,21 @@ func computeAlbumCols(width int) albumCols {
 }
 
 func trackHeader(tc trackCols) string {
+	// Ultra-narrow: just title header
+	if tc.artist == 0 {
+		return "  " + col("Title", tc.title, headerStyle)
+	}
 	s := "  " +
-		col("#", colNum, headerStyle) +
+		colRight("#", colNum, headerStyle) +
 		col("Artist", tc.artist, headerStyle) +
 		col("Title", tc.title, headerStyle)
 	if tc.showAlbum {
 		s += col("Album", tc.album, headerStyle)
 	}
 	if tc.showYear {
-		s += col("Year", colYear, headerStyle)
+		s += colRight("Year", colYear, headerStyle)
 	}
-	s += col("Time", colDuration, headerStyle)
+	s += colRight("Time", colDuration, headerStyle)
 	return s
 }
 
@@ -255,32 +271,40 @@ func trackRow(i int, track types.Track, selected bool, liked bool, downloaded bo
 	num := fmt.Sprintf("%d", i+1)
 	icons := statusIcons(liked, downloaded)
 
+	// Ultra-narrow: title only
+	if tc.artist == 0 {
+		if selected {
+			return titleStyle.Render("▸") + icons + col(track.Title, tc.title, selectedStyle)
+		}
+		return " " + icons + col(track.Title, tc.title, normalStyle)
+	}
+
 	if selected {
 		s := titleStyle.Render("▸") + icons +
-			col(num, colNum, selectedStyle) +
+			colRight(num, colNum, selectedStyle) +
 			col(track.Artist.Name, tc.artist, selectedStyle) +
 			col(track.Title, tc.title, selectedStyle)
 		if tc.showAlbum {
 			s += col(track.Album.Title, tc.album, selectedStyle)
 		}
 		if tc.showYear {
-			s += col(trackYear(track), colYear, selectedStyle)
+			s += colRight(trackYear(track), colYear, selectedStyle)
 		}
-		s += col(duration, colDuration, selectedStyle)
+		s += colRight(duration, colDuration, selectedStyle)
 		return s
 	}
 
 	s := " " + icons +
-		col(num, colNum, dimStyle) +
+		colRight(num, colNum, dimStyle) +
 		col(track.Artist.Name, tc.artist, artistStyle) +
 		col(track.Title, tc.title, normalStyle)
 	if tc.showAlbum {
 		s += col(track.Album.Title, tc.album, dimStyle)
 	}
 	if tc.showYear {
-		s += col(trackYear(track), colYear, dimStyle)
+		s += colRight(trackYear(track), colYear, dimStyle)
 	}
-	s += col(duration, colDuration, dimStyle)
+	s += colRight(duration, colDuration, dimStyle)
 	return s
 }
 
@@ -288,8 +312,8 @@ func albumHeader(ac albumCols) string {
 	return "  " +
 		col("Album", ac.title, headerStyle) +
 		col("Artist", ac.artist, headerStyle) +
-		col("Year", colYear, headerStyle) +
-		col("Tracks", colTracks, headerStyle)
+		colRight("Year", colYear, headerStyle) +
+		colRight("Tracks", colTracks, headerStyle)
 }
 
 func albumRow(i int, album types.AlbumFull, selected bool, ac albumCols) string {
@@ -307,15 +331,15 @@ func albumRow(i int, album types.AlbumFull, selected bool, ac albumCols) string 
 		return titleStyle.Render("▸ ") +
 			col(album.Title, ac.title, selectedStyle) +
 			col(artist, ac.artist, selectedStyle) +
-			col(year, colYear, selectedStyle) +
-			col(tracks, colTracks, selectedStyle)
+			colRight(year, colYear, selectedStyle) +
+			colRight(tracks, colTracks, selectedStyle)
 	}
 
 	return "  " +
 		col(album.Title, ac.title, normalStyle) +
 		col(artist, ac.artist, artistStyle) +
-		col(year, colYear, dimStyle) +
-		col(tracks, colTracks, dimStyle)
+		colRight(year, colYear, dimStyle) +
+		colRight(tracks, colTracks, dimStyle)
 }
 
 func artistHeader(width int) string {
@@ -346,7 +370,7 @@ func artistRow(i int, artist types.ArtistFull, selected bool, width int) string 
 		col(artist.Name, w, artistStyle)
 }
 
-func (m searchModel) View(width int, isLiked func(int) bool, isDownloaded func(types.Track) bool) string {
+func (m searchModel) View(width int, isLiked func(int) bool, isDownloaded func(types.Track) bool, spinner string) string {
 	modeLabels := map[searchMode]string{
 		modeTrack: "tracks", modeAlbum: "albums", modeArtist: "artists",
 		modeBrowseAlbum: "albums",
@@ -360,7 +384,7 @@ func (m searchModel) View(width int, isLiked func(int) bool, isDownloaded func(t
 	s += "\n\n"
 
 	if m.loading {
-		s += dimStyle.Render("  Searching...")
+		s += dimStyle.Render("  " + spinner + " Searching...")
 		return s
 	}
 

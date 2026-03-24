@@ -55,6 +55,11 @@ func (m nowPlayingModel) View(width int) string {
 		vol,
 	)
 
+	// Ultra-narrow: hide progress bar entirely
+	if width < 40 {
+		return nowPlayingStyle.Render(info)
+	}
+
 	// Progress bar
 	barWidth := width - 20
 	if barWidth < 10 {

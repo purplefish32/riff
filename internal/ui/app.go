@@ -37,6 +37,8 @@ type queueAlbumMsg struct {
 
 var qualities = []string{"LOW", "HIGH", "LOSSLESS", "HI_RES"}
 
+var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
 type tickMsg struct{}
 
 type viewTab int
@@ -77,6 +79,7 @@ type App struct {
 	selected         map[int]bool
 	online           bool
 	tickCount        int
+	spinnerIdx       int
 	client           *api.Client
 	player           *player.Player
 	likes            *persistence.LikedStore
@@ -134,7 +137,7 @@ func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedS
 }
 
 func tick() tea.Cmd {
-	return tea.Tick(time.Second, func(time.Time) tea.Msg {
+	return tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg {
 		return tickMsg{}
 	})
 }
@@ -948,24 +951,28 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case tickMsg:
-		a = a.syncNowPlaying()
 		a.tickCount++
-		if a.statusTicks > 0 {
-			a.statusTicks--
-			if a.statusTicks == 0 {
-				a.statusMsg = ""
+		a.spinnerIdx = (a.spinnerIdx + 1) % len(spinnerFrames)
+		// Every 10th tick (~1 second): update position, status, sync
+		if a.tickCount%10 == 0 {
+			a = a.syncNowPlaying()
+			if a.statusTicks > 0 {
+				a.statusTicks--
+				if a.statusTicks == 0 {
+					a.statusMsg = ""
+				}
 			}
-		}
-		if a.nowPlaying.track != nil && !a.nowPlaying.paused {
-			pos, dur, err := a.player.GetPosition()
-			if err == nil {
-				a.nowPlaying.position = pos
-				a.nowPlaying.duration = dur
+			if a.nowPlaying.track != nil && !a.nowPlaying.paused {
+				pos, dur, err := a.player.GetPosition()
+				if err == nil {
+					a.nowPlaying.position = pos
+					a.nowPlaying.duration = dur
+				}
 			}
-		}
-		// Re-ping every 10 ticks when offline
-		if !a.online && a.tickCount%10 == 0 {
-			return a, tea.Batch(tick(), a.doPing())
+			// Re-ping every 100 ticks (~10 seconds) when offline
+			if !a.online && a.tickCount%100 == 0 {
+				return a, tea.Batch(tick(), a.doPing())
+			}
 		}
 		return a, tick()
 
@@ -1074,15 +1081,28 @@ func (a App) dlCheck() func(types.Track) bool {
 	return a.dl.IsDownloaded
 }
 
+func (a App) hasDownloadActivity() bool {
+	if a.dl == nil {
+		return false
+	}
+	st := a.dl.Status()
+	return st.Active+st.Completed+st.Failed+st.Queued > 0
+}
+
 func (a App) renderTabBar() string {
-	tabs := []struct {
+	type tabEntry struct {
 		label string
 		tab   viewTab
-	}{
+	}
+	tabs := []tabEntry{
 		{"1:Queue", tabQueue},
 		{"2:Liked", tabLiked},
-		{"3:Downloads", tabDownloads},
 	}
+	if a.hasDownloadActivity() {
+		tabs = append(tabs, tabEntry{"3:Downloads", tabDownloads})
+	}
+
+	dimmedAll := a.searchVisible() || a.mode == modeHelp
 
 	selCount := len(a.selected)
 	var parts []string
@@ -1097,7 +1117,7 @@ func (a App) renderTabBar() string {
 		if selCount > 0 && t.tab == a.activeTab {
 			label += fmt.Sprintf(" [%d sel]", selCount)
 		}
-		if t.tab == a.activeTab {
+		if !dimmedAll && t.tab == a.activeTab {
 			parts = append(parts, selectedStyle.Render(" "+label+" "))
 		} else {
 			parts = append(parts, dimStyle.Render(" "+label+" "))
@@ -1163,17 +1183,23 @@ func (a App) renderQueueView() string {
 			marker = titleStyle.Render("●")
 		}
 
-		row := marker + icons +
-			col(num, colNum, numSt) +
-			col(t.Artist.Name, tc.artist, artSt) +
-			col(t.Title, tc.title, titSt)
-		if tc.showAlbum {
-			row += col(t.Album.Title, tc.album, albSt)
+		var row string
+		if tc.artist == 0 {
+			// Ultra-narrow: title only
+			row = marker + icons + col(t.Title, tc.title, titSt)
+		} else {
+			row = marker + icons +
+				colRight(num, colNum, numSt) +
+				col(t.Artist.Name, tc.artist, artSt) +
+				col(t.Title, tc.title, titSt)
+			if tc.showAlbum {
+				row += col(t.Album.Title, tc.album, albSt)
+			}
+			if tc.showYear {
+				row += colRight(trackYear(t), colYear, durSt)
+			}
+			row += colRight(duration, colDuration, durSt)
 		}
-		if tc.showYear {
-			row += col(trackYear(t), colYear, durSt)
-		}
-		row += col(duration, colDuration, durSt)
 		s += row + "\n"
 	}
 
@@ -1261,17 +1287,27 @@ func (a App) renderDownloadsView() string {
 }
 
 func (a App) View() string {
-	logo := "  " + titleStyle.Render("╦═╗ ╦ ╔═╗ ╔═╗") + "\n" +
-		"  " + titleStyle.Render("╠╦╝ ║ ╠╣  ╠╣ ") + "\n" +
-		"  " + titleStyle.Render("╩╚═ ╩ ╚   ╚  ")
-	if !a.online {
-		logo += "  " + errorStyle.Render("OFFLINE")
+	var header string
+	if a.height < 20 {
+		onlineSuffix := ""
+		if !a.online {
+			onlineSuffix = "  " + errorStyle.Render("OFFLINE")
+		}
+		header = "  " + titleStyle.Render("riff") + onlineSuffix
+	} else {
+		logo := "  " + titleStyle.Render("╦═╗ ╦ ╔═╗ ╔═╗") + "\n" +
+			"  " + titleStyle.Render("╠╦╝ ║ ╠╣  ╠╣ ") + "\n" +
+			"  " + titleStyle.Render("╩╚═ ╩ ╚   ╚  ")
+		if !a.online {
+			logo += "  " + errorStyle.Render("OFFLINE")
+		}
+		header = logo
 	}
-	header := logo
 
+	spinner := spinnerFrames[a.spinnerIdx]
 	var np string
 	if a.loading {
-		np = nowPlayingStyle.Render(dimStyle.Render("  Loading stream..."))
+		np = nowPlayingStyle.Render(dimStyle.Render("  " + spinner + " Loading stream..."))
 	} else {
 		np = a.nowPlaying.View(a.width)
 	}
@@ -1284,7 +1320,13 @@ func (a App) View() string {
 
 	statusLine := ""
 	if a.statusMsg != "" {
-		statusLine = "  " + titleStyle.Render(a.statusMsg) + "\n"
+		var statusStyle lipgloss.Style
+		if a.statusTicks <= 1 {
+			statusStyle = dimStyle
+		} else {
+			statusStyle = titleStyle
+		}
+		statusLine = "  " + statusStyle.Render(a.statusMsg) + "\n"
 	}
 	help := dimStyle.Render("  ? help  / search  enter play  a queue  p prev  n next  space pause  s stop  q quit")
 
@@ -1328,7 +1370,7 @@ func (a App) View() string {
 		searchOverlay := overlayBorder.
 			Padding(1, 2).
 			Width(a.width - 6).
-			Render(a.search.View(a.width-12, a.likes.IsLiked, a.dlCheck()))
+			Render(a.search.View(a.width-12, a.likes.IsLiked, a.dlCheck(), spinner))
 		top = fmt.Sprintf("\n%s\n%s\n\n%s\n%s%s", header, tabBar, searchOverlay, dimStyle.Render("  esc to close"), errView)
 
 	default:
