@@ -71,6 +71,7 @@ type App struct {
 	undoPos          int
 	undoTrackPos     int
 	loading          bool
+	streamRetries    int
 	client           *api.Client
 	player           *player.Player
 	likes            *persistence.LikedStore
@@ -159,6 +160,7 @@ func (a App) playPos(pos int) (App, tea.Cmd) {
 	a.nowPlaying.duration = 0
 	a.err = nil
 	a.loading = true
+	a.streamRetries = 0
 	trackID := track.ID
 	q := qualities[a.quality]
 	return a, func() tea.Msg {
@@ -691,6 +693,16 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 			}
 		}
 		return a, nil
+	case "r":
+		if a.activeTab == tabDownloads && a.dl != nil {
+			n := a.dl.RetryFailed()
+			if n > 0 {
+				a = a.withStatus(fmt.Sprintf("Retrying %d downloads", n))
+			} else {
+				a = a.withStatus("No failed downloads to retry")
+			}
+		}
+		return a, nil
 	case "Q":
 		a.quality = (a.quality + 1) % len(qualities)
 		a.config.Quality = qualities[a.quality]
@@ -744,11 +756,27 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case streamURLMsg:
-		a.loading = false
 		if msg.err != nil {
+			if a.streamRetries < 1 {
+				a.streamRetries++
+				// Auto-retry once on error
+				if a.trackPos >= 0 && a.trackPos < len(a.tracklist) {
+					track := &a.tracklist[a.trackPos]
+					trackID := track.ID
+					q := qualities[a.quality]
+					return a, func() tea.Msg {
+						url, err := a.client.GetStreamURL(trackID, q)
+						return streamURLMsg{url: url, err: err}
+					}
+				}
+			}
+			a.loading = false
+			a.streamRetries = 0
 			a.err = msg.err
 			return a, nil
 		}
+		a.loading = false
+		a.streamRetries = 0
 		if err := a.player.Play(msg.url); err != nil {
 			a.err = err
 			return a, nil
