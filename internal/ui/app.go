@@ -744,15 +744,18 @@ func (a App) renderQueueView() string {
 			numSt, artSt, albSt, titSt, durSt = dimStyle, artistStyle, dimStyle, normalStyle, dimStyle
 		}
 
-		year := trackYear(t)
-
-		s += marker + icons +
+		row := marker + icons +
 			col(num, colNum, numSt) +
 			col(t.Artist.Name, tc.artist, artSt) +
-			col(t.Title, tc.title, titSt) +
-			col(t.Album.Title, tc.album, albSt) +
-			col(year, colYear, durSt) +
-			col(duration, colDuration, durSt) + "\n"
+			col(t.Title, tc.title, titSt)
+		if tc.showAlbum {
+			row += col(t.Album.Title, tc.album, albSt)
+		}
+		if tc.showYear {
+			row += col(trackYear(t), colYear, durSt)
+		}
+		row += col(duration, colDuration, durSt)
+		s += row + "\n"
 	}
 	s += "\n" + dimStyle.Render("  enter play  x remove  / search")
 	return s
