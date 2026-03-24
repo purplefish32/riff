@@ -1261,9 +1261,9 @@ func (a App) renderDownloadsView() string {
 }
 
 func (a App) View() string {
-	logo := titleStyle.Render("╦═╗ ╦ ╔═╗ ╔═╗") + "\n" +
-		titleStyle.Render("╠╦╝ ║ ╠╣  ╠╣ ") + "\n" +
-		titleStyle.Render("╩╚═ ╩ ╚   ╚  ")
+	logo := "  " + titleStyle.Render("╦═╗ ╦ ╔═╗ ╔═╗") + "\n" +
+		"  " + titleStyle.Render("╠╦╝ ║ ╠╣  ╠╣ ") + "\n" +
+		"  " + titleStyle.Render("╩╚═ ╩ ╚   ╚  ")
 	if !a.online {
 		logo += "  " + errorStyle.Render("OFFLINE")
 	}
@@ -1322,14 +1322,14 @@ func (a App) View() string {
 					helpLine("?", "Toggle this help") +
 					helpLine("q", "Quit"),
 			)
-		top = fmt.Sprintf("\n  %s\n%s\n\n%s\n%s", header, tabBar, helpOverlay, dimStyle.Render("  esc to close"))
+		top = fmt.Sprintf("\n%s\n%s\n\n%s\n%s", header, tabBar, helpOverlay, dimStyle.Render("  esc to close"))
 
 	case a.searchVisible():
 		searchOverlay := overlayBorder.
 			Padding(1, 2).
 			Width(a.width - 6).
 			Render(a.search.View(a.width-12, a.likes.IsLiked, a.dlCheck()))
-		top = fmt.Sprintf("\n  %s\n%s\n\n%s\n%s%s", header, tabBar, searchOverlay, dimStyle.Render("  esc to close"), errView)
+		top = fmt.Sprintf("\n%s\n%s\n\n%s\n%s%s", header, tabBar, searchOverlay, dimStyle.Render("  esc to close"), errView)
 
 	default:
 		var content string
@@ -1341,7 +1341,7 @@ func (a App) View() string {
 		case tabDownloads:
 			content = a.renderDownloadsView()
 		}
-		top = fmt.Sprintf("\n  %s\n%s\n\n%s%s", header, tabBar, content, errView)
+		top = fmt.Sprintf("\n%s\n%s\n\n%s%s", header, tabBar, content, errView)
 	}
 
 	dlStatus := ""
