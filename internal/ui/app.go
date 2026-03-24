@@ -1261,13 +1261,22 @@ func (a App) renderDownloadsView() string {
 }
 
 func (a App) View() string {
-	logo := "  " + titleStyle.Render("╦═╗ ╦ ╔═╗ ╔═╗") + "\n" +
-		"  " + titleStyle.Render("╠╦╝ ║ ╠╣  ╠╣ ") + "\n" +
-		"  " + titleStyle.Render("╩╚═ ╩ ╚   ╚  ")
-	if !a.online {
-		logo += "  " + errorStyle.Render("OFFLINE")
+	var header string
+	if a.height < 20 {
+		onlineSuffix := ""
+		if !a.online {
+			onlineSuffix = "  " + errorStyle.Render("OFFLINE")
+		}
+		header = "  " + titleStyle.Render("riff") + onlineSuffix
+	} else {
+		logo := "  " + titleStyle.Render("╦═╗ ╦ ╔═╗ ╔═╗") + "\n" +
+			"  " + titleStyle.Render("╠╦╝ ║ ╠╣  ╠╣ ") + "\n" +
+			"  " + titleStyle.Render("╩╚═ ╩ ╚   ╚  ")
+		if !a.online {
+			logo += "  " + errorStyle.Render("OFFLINE")
+		}
+		header = logo
 	}
-	header := logo
 
 	var np string
 	if a.loading {
