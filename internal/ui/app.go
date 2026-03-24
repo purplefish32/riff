@@ -1261,10 +1261,13 @@ func (a App) renderDownloadsView() string {
 }
 
 func (a App) View() string {
-	header := titleStyle.Render("♫ riff")
+	logo := titleStyle.Render("♫ ╦═╗╦╔═╗╔═╗") + "\n" +
+		titleStyle.Render("  ╠╦╝║╠╣ ╠╣ ") + "\n" +
+		titleStyle.Render("  ╩╚═╩╚  ╚  ")
 	if !a.online {
-		header += "  " + errorStyle.Render("OFFLINE")
+		logo += "  " + errorStyle.Render("OFFLINE")
 	}
+	header := logo
 
 	var np string
 	if a.loading {
