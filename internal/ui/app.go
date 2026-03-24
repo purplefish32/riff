@@ -216,6 +216,15 @@ func (a App) stopPlayback() App {
 	return a
 }
 
+func (a App) syncNowPlaying() App {
+	a.nowPlaying.quality = qualities[a.quality]
+	a.nowPlaying.volume = a.volume
+	if a.nowPlaying.track != nil {
+		a.nowPlaying.liked = a.likes.IsLiked(a.nowPlaying.track.ID)
+	}
+	return a
+}
+
 func (a App) adjustVolume(delta int) App {
 	a.volume += delta
 	if a.volume < 0 {
@@ -580,6 +589,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case tickMsg:
+		a = a.syncNowPlaying()
 		if a.nowPlaying.track != nil && !a.nowPlaying.paused {
 			pos, dur, err := a.player.GetPosition()
 			if err == nil {
@@ -803,11 +813,6 @@ func (a App) View() string {
 		Foreground(lipgloss.Color("#FF6AC1")).
 		Render("♫ riff")
 
-	a.nowPlaying.quality = qualities[a.quality]
-	a.nowPlaying.volume = a.volume
-	if a.nowPlaying.track != nil {
-		a.nowPlaying.liked = a.likes.IsLiked(a.nowPlaying.track.ID)
-	}
 	np := a.nowPlaying.View(a.width)
 	tabBar := a.renderTabBar()
 
