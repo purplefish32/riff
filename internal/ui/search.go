@@ -370,7 +370,7 @@ func artistRow(i int, artist types.ArtistFull, selected bool, width int) string 
 		col(artist.Name, w, artistStyle)
 }
 
-func (m searchModel) View(width int, isLiked func(int) bool, isDownloaded func(types.Track) bool) string {
+func (m searchModel) View(width int, isLiked func(int) bool, isDownloaded func(types.Track) bool, spinner string) string {
 	modeLabels := map[searchMode]string{
 		modeTrack: "tracks", modeAlbum: "albums", modeArtist: "artists",
 		modeBrowseAlbum: "albums",
@@ -384,7 +384,7 @@ func (m searchModel) View(width int, isLiked func(int) bool, isDownloaded func(t
 	s += "\n\n"
 
 	if m.loading {
-		s += dimStyle.Render("  Searching...")
+		s += dimStyle.Render("  " + spinner + " Searching...")
 		return s
 	}
 
