@@ -27,25 +27,27 @@ type Status struct {
 }
 
 type Downloader struct {
-	client   *api.Client
-	baseDir  string
-	quality  string
-	mu       sync.Mutex
-	status   Status
-	onUpdate func()
-	sem      chan struct{}
-	log      *log.Logger
+	client     *api.Client
+	baseDir    string
+	quality    string
+	mu         sync.Mutex
+	status     Status
+	onUpdate   func()
+	sem        chan struct{}
+	log        *log.Logger
+	downloaded map[int]bool
 }
 
 func New(client *api.Client, quality string, onUpdate func(), logger *log.Logger) *Downloader {
 	home, _ := os.UserHomeDir()
 	return &Downloader{
-		client:   client,
-		baseDir:  filepath.Join(home, "Music", "riff"),
-		quality:  quality,
-		onUpdate: onUpdate,
-		sem:      make(chan struct{}, maxConcurrent),
-		log:      logger,
+		client:     client,
+		baseDir:    filepath.Join(home, "Music", "riff"),
+		quality:    quality,
+		onUpdate:   onUpdate,
+		sem:        make(chan struct{}, maxConcurrent),
+		log:        logger,
+		downloaded: make(map[int]bool),
 	}
 }
 
@@ -118,9 +120,21 @@ func (d *Downloader) trackPath(track types.Track) string {
 }
 
 func (d *Downloader) IsDownloaded(track types.Track) bool {
+	d.mu.Lock()
+	if d.downloaded[track.ID] {
+		d.mu.Unlock()
+		return true
+	}
+	d.mu.Unlock()
+
 	path := d.trackPath(track)
-	_, err := os.Stat(path)
-	return err == nil
+	if _, err := os.Stat(path); err == nil {
+		d.mu.Lock()
+		d.downloaded[track.ID] = true
+		d.mu.Unlock()
+		return true
+	}
+	return false
 }
 
 func (d *Downloader) downloadTrack(track types.Track) {
@@ -135,6 +149,7 @@ func (d *Downloader) downloadTrack(track types.Track) {
 		d.mu.Lock()
 		d.status.Queued--
 		d.status.Completed++
+		d.downloaded[track.ID] = true
 		d.mu.Unlock()
 		d.notify()
 		return
@@ -177,6 +192,7 @@ func (d *Downloader) downloadTrack(track types.Track) {
 	d.mu.Lock()
 	d.status.Active--
 	d.status.Completed++
+	d.downloaded[track.ID] = true
 	d.mu.Unlock()
 	d.notify()
 }

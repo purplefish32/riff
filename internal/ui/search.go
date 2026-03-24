@@ -5,7 +5,6 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/purplefish32/riff/internal/types"
 )
 
@@ -157,19 +156,45 @@ const (
 
 type trackCols struct {
 	artist, album, title int
+	showAlbum, showYear  bool
 }
 
 func computeTrackCols(width int) trackCols {
-	fixed := colLike + colNum + colYear + colDuration + 4 // padding
-	avail := width - fixed
-	if avail < 30 {
-		avail = 30
+	// Below 60 cols: hide album and year columns
+	if width < 60 {
+		fixed := colLike + colNum + colDuration + 4
+		avail := width - fixed
+		if avail < 20 {
+			avail = 20
+		}
+		return trackCols{
+			artist:    avail * 40 / 100,
+			title:     avail * 60 / 100,
+			showAlbum: false,
+			showYear:  false,
+		}
 	}
-	// 30% artist, 40% title, 30% album
+	// Below 90 cols: hide year column
+	if width < 90 {
+		fixed := colLike + colNum + colDuration + 4
+		avail := width - fixed
+		return trackCols{
+			artist:    avail * 25 / 100,
+			title:     avail * 40 / 100,
+			album:     avail * 35 / 100,
+			showAlbum: true,
+			showYear:  false,
+		}
+	}
+	// Full width
+	fixed := colLike + colNum + colYear + colDuration + 4
+	avail := width - fixed
 	return trackCols{
-		artist: avail * 30 / 100,
-		title:  avail * 40 / 100,
-		album:  avail * 30 / 100,
+		artist:    avail * 30 / 100,
+		title:     avail * 40 / 100,
+		album:     avail * 30 / 100,
+		showAlbum: true,
+		showYear:  true,
 	}
 }
 
@@ -190,13 +215,18 @@ func computeAlbumCols(width int) albumCols {
 }
 
 func trackHeader(tc trackCols) string {
-	return "  " +
+	s := "  " +
 		col("#", colNum, headerStyle) +
 		col("Artist", tc.artist, headerStyle) +
-		col("Title", tc.title, headerStyle) +
-		col("Album", tc.album, headerStyle) +
-		col("Year", colYear, headerStyle) +
-		col("Time", colDuration, headerStyle)
+		col("Title", tc.title, headerStyle)
+	if tc.showAlbum {
+		s += col("Album", tc.album, headerStyle)
+	}
+	if tc.showYear {
+		s += col("Year", colYear, headerStyle)
+	}
+	s += col("Time", colDuration, headerStyle)
+	return s
 }
 
 func statusIcons(liked bool, downloaded bool) string {
@@ -206,7 +236,7 @@ func statusIcons(liked bool, downloaded bool) string {
 	}
 	d := " "
 	if downloaded {
-		d = lipgloss.NewStyle().Foreground(lipgloss.Color("#50FA7B")).Render("↓")
+		d = downloadIcon.Render("↓")
 	}
 	return l + d
 }
@@ -221,26 +251,35 @@ func trackYear(track types.Track) string {
 func trackRow(i int, track types.Track, selected bool, liked bool, downloaded bool, tc trackCols) string {
 	duration := fmt.Sprintf("%d:%02d", track.Duration/60, track.Duration%60)
 	num := fmt.Sprintf("%d", i+1)
-	year := trackYear(track)
 	icons := statusIcons(liked, downloaded)
 
 	if selected {
-		return titleStyle.Render("▸") + icons +
+		s := titleStyle.Render("▸") + icons +
 			col(num, colNum, selectedStyle) +
 			col(track.Artist.Name, tc.artist, selectedStyle) +
-			col(track.Title, tc.title, selectedStyle) +
-			col(track.Album.Title, tc.album, selectedStyle) +
-			col(year, colYear, selectedStyle) +
-			col(duration, colDuration, selectedStyle)
+			col(track.Title, tc.title, selectedStyle)
+		if tc.showAlbum {
+			s += col(track.Album.Title, tc.album, selectedStyle)
+		}
+		if tc.showYear {
+			s += col(trackYear(track), colYear, selectedStyle)
+		}
+		s += col(duration, colDuration, selectedStyle)
+		return s
 	}
 
-	return " " + icons +
+	s := " " + icons +
 		col(num, colNum, dimStyle) +
 		col(track.Artist.Name, tc.artist, artistStyle) +
-		col(track.Title, tc.title, normalStyle) +
-		col(track.Album.Title, tc.album, dimStyle) +
-		col(year, colYear, dimStyle) +
-		col(duration, colDuration, dimStyle)
+		col(track.Title, tc.title, normalStyle)
+	if tc.showAlbum {
+		s += col(track.Album.Title, tc.album, dimStyle)
+	}
+	if tc.showYear {
+		s += col(trackYear(track), colYear, dimStyle)
+	}
+	s += col(duration, colDuration, dimStyle)
+	return s
 }
 
 func albumHeader(ac albumCols) string {
