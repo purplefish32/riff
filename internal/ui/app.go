@@ -26,6 +26,8 @@ type streamURLMsg struct {
 	err error
 }
 
+type pingMsg struct{ online bool }
+
 type trackEndedMsg struct{ gen int }
 
 type queueAlbumMsg struct {
@@ -73,6 +75,8 @@ type App struct {
 	loading          bool
 	streamRetries    int
 	selected         map[int]bool
+	online           bool
+	tickCount        int
 	client           *api.Client
 	player           *player.Player
 	likes            *persistence.LikedStore
@@ -125,6 +129,7 @@ func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedS
 		queueCursor: queueCursor,
 		likedCursor: likedCursor,
 		selected:    make(map[int]bool),
+		online:      true,
 	}
 }
 
@@ -134,11 +139,17 @@ func tick() tea.Cmd {
 	})
 }
 
+func (a App) doPing() tea.Cmd {
+	return func() tea.Msg {
+		return pingMsg{online: a.client.Ping()}
+	}
+}
+
 func (a App) Init() tea.Cmd {
 	if a.mode == modeSearchInput {
-		return tea.Batch(a.search.input.Focus(), tick())
+		return tea.Batch(a.search.input.Focus(), tick(), a.doPing())
 	}
-	return tick()
+	return tea.Batch(tick(), a.doPing())
 }
 
 func (a App) makeWaitForTrackEnd(gen int) tea.Cmd {
@@ -299,6 +310,10 @@ func (a App) updateSearchInput(msg tea.KeyMsg) (App, tea.Cmd) {
 		return a, nil
 	case "enter":
 		if a.search.input.Value() == "" {
+			return a, nil
+		}
+		if !a.online {
+			a = a.withStatus("Search unavailable — offline")
 			return a, nil
 		}
 		query := a.search.input.Value()
@@ -928,8 +943,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 
+	case pingMsg:
+		a.online = msg.online
+		return a, nil
+
 	case tickMsg:
 		a = a.syncNowPlaying()
+		a.tickCount++
 		if a.statusTicks > 0 {
 			a.statusTicks--
 			if a.statusTicks == 0 {
@@ -942,6 +962,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.nowPlaying.position = pos
 				a.nowPlaying.duration = dur
 			}
+		}
+		// Re-ping every 10 ticks when offline
+		if !a.online && a.tickCount%10 == 0 {
+			return a, tea.Batch(tick(), a.doPing())
 		}
 		return a, tick()
 
@@ -963,6 +987,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case streamURLMsg:
 		if msg.err != nil {
+			if isNetworkError(msg.err) {
+				a.online = false
+			}
 			if a.streamRetries < 1 {
 				a.streamRetries++
 				// Auto-retry once on error
@@ -983,6 +1010,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		a.loading = false
 		a.streamRetries = 0
+		a.online = true
 		if err := a.player.Play(msg.url); err != nil {
 			a.err = err
 			return a, nil
@@ -1002,9 +1030,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case queueAlbumMsg:
 		if msg.err != nil {
+			if isNetworkError(msg.err) {
+				a.online = false
+			}
 			a.err = msg.err
 			return a, nil
 		}
+		a.online = true
 		a = a.withQueueAddAll(msg.tracks)
 		return a, nil
 
@@ -1230,6 +1262,9 @@ func (a App) renderDownloadsView() string {
 
 func (a App) View() string {
 	header := titleStyle.Render("♫ riff")
+	if !a.online {
+		header += "  " + errorStyle.Render("OFFLINE")
+	}
 
 	var np string
 	if a.loading {
@@ -1344,6 +1379,19 @@ func helpLine(key, desc string) string {
 		titleStyle.Width(12).Render(key),
 		desc,
 	)
+}
+
+// isNetworkError returns true if the error looks like a connectivity failure.
+func isNetworkError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "connection refused") ||
+		strings.Contains(s, "no such host") ||
+		strings.Contains(s, "i/o timeout") ||
+		strings.Contains(s, "network") ||
+		strings.Contains(s, "all instances failed")
 }
 
 func openBrowser(url string) {

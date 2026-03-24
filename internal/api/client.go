@@ -68,6 +68,17 @@ func (c *Client) get(path string) (*http.Response, error) {
 	return nil, fmt.Errorf("all instances failed: %w", lastErr)
 }
 
+// Ping does a quick HEAD/GET to the current base URL and returns true if reachable.
+func (c *Client) Ping() bool {
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get(c.baseURL() + "/")
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	return resp.StatusCode < 500
+}
+
 func (c *Client) SearchTracks(query string) ([]types.Track, error) {
 	resp, err := c.get(fmt.Sprintf("/search/?s=%s", url.QueryEscape(query)))
 	if err != nil {
