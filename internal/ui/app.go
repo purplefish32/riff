@@ -72,6 +72,7 @@ type App struct {
 	undoTrackPos     int
 	loading          bool
 	streamRetries    int
+	selected         map[int]bool
 	client           *api.Client
 	player           *player.Player
 	likes            *persistence.LikedStore
@@ -123,6 +124,7 @@ func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedS
 		volume:      cfg.Volume,
 		queueCursor: queueCursor,
 		likedCursor: likedCursor,
+		selected:    make(map[int]bool),
 	}
 }
 
@@ -569,7 +571,49 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 		if a.activeTab != tabQueue || len(a.tracklist) == 0 {
 			return a, nil
 		}
-		// Save undo state before removal
+		if len(a.selected) > 0 {
+			// Batch remove selected tracks (sort indices descending to avoid index shifting)
+			indices := make([]int, 0, len(a.selected))
+			for idx := range a.selected {
+				if idx >= 0 && idx < len(a.tracklist) {
+					indices = append(indices, idx)
+				}
+			}
+			// Sort descending
+			for i := 0; i < len(indices)-1; i++ {
+				for j := i + 1; j < len(indices); j++ {
+					if indices[j] > indices[i] {
+						indices[i], indices[j] = indices[j], indices[i]
+					}
+				}
+			}
+			removedPlaying := false
+			for _, idx := range indices {
+				if idx == a.trackPos {
+					removedPlaying = true
+				}
+				a.tracklist = append(a.tracklist[:idx], a.tracklist[idx+1:]...)
+				// Adjust trackPos and cursor for removed index
+				if idx < a.trackPos {
+					a.trackPos--
+				}
+				if idx <= a.queueCursor && a.queueCursor > 0 {
+					a.queueCursor--
+				}
+			}
+			a.selected = make(map[int]bool)
+			if a.queueCursor >= len(a.tracklist) && a.queueCursor > 0 {
+				a.queueCursor = len(a.tracklist) - 1
+			}
+			if removedPlaying {
+				a = a.stopPlayback()
+				a.trackPos = -1
+			}
+			a.queueStore.Save(a.tracklist, a.trackPos)
+			a = a.withStatus(fmt.Sprintf("Removed %d tracks", len(indices)))
+			return a, nil
+		}
+		// Save undo state before single removal
 		trackCopy := a.tracklist[a.queueCursor]
 		a.undoTrack = &trackCopy
 		a.undoPos = a.queueCursor
@@ -622,7 +666,18 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 		return a, nil
 	case "a":
 		if a.activeTab == tabLiked && len(a.likes.Tracks) > 0 {
-			a = a.withQueueAdd(a.likes.Tracks[a.likedCursor])
+			if len(a.selected) > 0 {
+				var toQueue []types.Track
+				for _, t := range a.likes.Tracks {
+					if a.selected[t.ID] {
+						toQueue = append(toQueue, t)
+					}
+				}
+				a.selected = make(map[int]bool)
+				a = a.withQueueAddAll(toQueue)
+			} else {
+				a = a.withQueueAdd(a.likes.Tracks[a.likedCursor])
+			}
 		}
 		return a, nil
 	case " ":
@@ -665,7 +720,18 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 	case "d":
 		if a.dl != nil {
 			a.dl.SetQuality(qualities[a.quality])
-			if target := a.targetTrackOrNowPlaying(); target != nil {
+			if len(a.selected) > 0 && a.activeTab == tabQueue {
+				count := 0
+				for idx := range a.selected {
+					if idx >= 0 && idx < len(a.tracklist) {
+						if a.dl.QueueTrack(a.tracklist[idx]) {
+							count++
+						}
+					}
+				}
+				a.selected = make(map[int]bool)
+				a = a.withStatus(fmt.Sprintf("Downloading %d tracks", count))
+			} else if target := a.targetTrackOrNowPlaying(); target != nil {
 				if a.dl.IsDownloaded(*target) {
 					a = a.withStatus(fmt.Sprintf("Already downloaded: %s", target.Title))
 				} else if a.dl.QueueTrack(*target) {
@@ -690,6 +756,62 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 				a = a.withStatus(fmt.Sprintf("Liked: %s", target.Title))
 			} else {
 				a = a.withStatus(fmt.Sprintf("Unliked: %s", target.Title))
+			}
+		}
+		return a, nil
+	case "v":
+		if a.selected == nil {
+			a.selected = make(map[int]bool)
+		}
+		if a.activeTab == tabQueue && len(a.tracklist) > 0 {
+			if a.selected[a.queueCursor] {
+				delete(a.selected, a.queueCursor)
+			} else {
+				a.selected[a.queueCursor] = true
+			}
+		} else if a.activeTab == tabLiked && len(a.likes.Tracks) > 0 {
+			id := a.likes.Tracks[a.likedCursor].ID
+			if a.selected[id] {
+				delete(a.selected, id)
+			} else {
+				a.selected[id] = true
+			}
+		}
+		return a, nil
+	case "V":
+		if a.selected == nil {
+			a.selected = make(map[int]bool)
+		}
+		if a.activeTab == tabQueue {
+			// Toggle: if all visible are selected, deselect all; otherwise select all
+			allSelected := len(a.tracklist) > 0
+			for i := range a.tracklist {
+				if !a.selected[i] {
+					allSelected = false
+					break
+				}
+			}
+			if allSelected {
+				a.selected = make(map[int]bool)
+			} else {
+				for i := range a.tracklist {
+					a.selected[i] = true
+				}
+			}
+		} else if a.activeTab == tabLiked {
+			allSelected := len(a.likes.Tracks) > 0
+			for _, t := range a.likes.Tracks {
+				if !a.selected[t.ID] {
+					allSelected = false
+					break
+				}
+			}
+			if allSelected {
+				a.selected = make(map[int]bool)
+			} else {
+				for _, t := range a.likes.Tracks {
+					a.selected[t.ID] = true
+				}
 			}
 		}
 		return a, nil
@@ -930,6 +1052,7 @@ func (a App) renderTabBar() string {
 		{"3:Downloads", tabDownloads},
 	}
 
+	selCount := len(a.selected)
 	var parts []string
 	for _, t := range tabs {
 		label := t.label
@@ -938,6 +1061,9 @@ func (a App) renderTabBar() string {
 		}
 		if t.tab == tabLiked && len(a.likes.Tracks) > 0 {
 			label = fmt.Sprintf("2:Liked(%d)", len(a.likes.Tracks))
+		}
+		if selCount > 0 && t.tab == a.activeTab {
+			label += fmt.Sprintf(" [%d sel]", selCount)
 		}
 		if t.tab == a.activeTab {
 			parts = append(parts, selectedStyle.Render(" "+label+" "))
@@ -978,6 +1104,7 @@ func (a App) renderQueueView() string {
 
 		duration := fmt.Sprintf("%d:%02d", t.Duration/60, t.Duration%60)
 		num := fmt.Sprintf("%d", i+1)
+		isSelected := a.selected[i]
 		icons := statusIcons(a.likes.IsLiked(t.ID), a.dl != nil && a.dl.IsDownloaded(t))
 
 		var numSt, artSt, albSt, titSt, durSt lipgloss.Style
@@ -999,6 +1126,9 @@ func (a App) renderQueueView() string {
 		default:
 			marker = " "
 			numSt, artSt, albSt, titSt, durSt = dimStyle, artistStyle, dimStyle, normalStyle, dimStyle
+		}
+		if isSelected {
+			marker = titleStyle.Render("●")
 		}
 
 		row := marker + icons +
@@ -1047,7 +1177,12 @@ func (a App) renderLikedView() string {
 
 	for i := a.likedScrollOffset; i < end; i++ {
 		t := a.likes.Tracks[i]
-		s += trackRow(i, t, i == a.likedCursor, true, a.dl != nil && a.dl.IsDownloaded(t), tc) + "\n"
+		row := trackRow(i, t, i == a.likedCursor, true, a.dl != nil && a.dl.IsDownloaded(t), tc)
+		if a.selected[t.ID] {
+			// Replace leading space/cursor with selection marker
+			row = titleStyle.Render("●") + row[1:]
+		}
+		s += row + "\n"
 	}
 
 	if end < len(a.likes.Tracks) {
