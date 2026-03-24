@@ -5,7 +5,6 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/purplefish32/riff/internal/types"
 )
 
@@ -206,7 +205,7 @@ func statusIcons(liked bool, downloaded bool) string {
 	}
 	d := " "
 	if downloaded {
-		d = lipgloss.NewStyle().Foreground(lipgloss.Color("#50FA7B")).Render("↓")
+		d = downloadIcon.Render("↓")
 	}
 	return l + d
 }

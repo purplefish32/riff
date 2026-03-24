@@ -797,7 +797,7 @@ func (a App) renderDownloadsView() string {
 		s += dimStyle.Render(fmt.Sprintf("  Completed: %d", st.Completed)) + "\n"
 	}
 	if st.Failed > 0 {
-		failStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000"))
+		failStyle := errorStyle
 		s += failStyle.Render(fmt.Sprintf("  Failed: %d", st.Failed)) + "\n"
 		if st.LastError != "" {
 			s += failStyle.Render(fmt.Sprintf("  Last error: %s", st.LastError)) + "\n"
@@ -808,19 +808,14 @@ func (a App) renderDownloadsView() string {
 }
 
 func (a App) View() string {
-	header := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("#FF6AC1")).
-		Render("♫ riff")
+	header := titleStyle.Render("♫ riff")
 
 	np := a.nowPlaying.View(a.width)
 	tabBar := a.renderTabBar()
 
 	errView := ""
 	if a.err != nil {
-		errView = "\n" + lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FF0000")).
-			Render(fmt.Sprintf("  Error: %s", a.err))
+		errView = "\n" + errorStyle.Render(fmt.Sprintf("  Error: %s", a.err))
 	}
 
 	help := dimStyle.Render("  ? help  / search  enter play  a queue  p prev  n next  space pause  s stop  q quit")
@@ -829,9 +824,7 @@ func (a App) View() string {
 
 	switch {
 	case a.mode == modeHelp:
-		helpOverlay := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#FF6AC1")).
+		helpOverlay := overlayBorder.
 			Padding(1, 2).
 			Render(
 				titleStyle.Render("Keybindings") + "\n\n" +
@@ -864,9 +857,7 @@ func (a App) View() string {
 		top = fmt.Sprintf("\n  %s\n%s\n\n%s\n%s", header, tabBar, helpOverlay, dimStyle.Render("  esc to close"))
 
 	case a.searchVisible():
-		searchOverlay := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#FF6AC1")).
+		searchOverlay := overlayBorder.
 			Padding(1, 2).
 			Width(a.width - 6).
 			Render(a.search.View(a.width-12, a.likes.IsLiked, a.dlCheck()))
@@ -920,11 +911,7 @@ func (a App) View() string {
 
 func helpLine(key, desc string) string {
 	return fmt.Sprintf("  %s  %s\n",
-		lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FF6AC1")).
-			Bold(true).
-			Width(12).
-			Render(key),
+		titleStyle.Width(12).Render(key),
 		desc,
 	)
 }
