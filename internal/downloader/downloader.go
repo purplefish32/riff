@@ -27,15 +27,17 @@ type Status struct {
 }
 
 type Downloader struct {
-	client     *api.Client
-	baseDir    string
-	quality    string
-	mu         sync.Mutex
-	status     Status
-	onUpdate   func()
-	sem        chan struct{}
-	log        *log.Logger
-	downloaded map[int]bool
+	client       *api.Client
+	baseDir      string
+	quality      string
+	mu           sync.Mutex
+	status       Status
+	onUpdate     func()
+	sem          chan struct{}
+	log          *log.Logger
+	downloaded   map[int]bool
+	queued       map[int]bool
+	failedTracks []types.Track
 }
 
 func New(client *api.Client, quality string, onUpdate func(), logger *log.Logger) *Downloader {
@@ -48,6 +50,7 @@ func New(client *api.Client, quality string, onUpdate func(), logger *log.Logger
 		sem:        make(chan struct{}, maxConcurrent),
 		log:        logger,
 		downloaded: make(map[int]bool),
+		queued:     make(map[int]bool),
 	}
 }
 
@@ -75,21 +78,31 @@ func (d *Downloader) SetOnUpdate(fn func()) {
 	d.onUpdate = fn
 }
 
-func (d *Downloader) QueueTrack(track types.Track) {
+// QueueTrack enqueues a track for download. Returns false if already queued or downloaded.
+func (d *Downloader) QueueTrack(track types.Track) bool {
 	d.mu.Lock()
+	if d.queued[track.ID] || d.downloaded[track.ID] {
+		d.mu.Unlock()
+		return false
+	}
+	d.queued[track.ID] = true
 	d.status.Queued++
 	d.mu.Unlock()
-	d.notify()
 	go d.downloadTrack(track)
+	return true
 }
 
 func (d *Downloader) QueueAlbum(tracks []types.Track) {
-	d.mu.Lock()
-	d.status.Queued += len(tracks)
-	d.mu.Unlock()
-	d.notify()
 	for _, t := range tracks {
 		track := t
+		d.mu.Lock()
+		if d.queued[track.ID] || d.downloaded[track.ID] {
+			d.mu.Unlock()
+			continue
+		}
+		d.queued[track.ID] = true
+		d.status.Queued++
+		d.mu.Unlock()
 		go d.downloadTrack(track)
 	}
 }
@@ -150,6 +163,7 @@ func (d *Downloader) downloadTrack(track types.Track) {
 		d.status.Queued--
 		d.status.Completed++
 		d.downloaded[track.ID] = true
+		delete(d.queued, track.ID)
 		d.mu.Unlock()
 		d.notify()
 		return
@@ -173,6 +187,8 @@ func (d *Downloader) downloadTrack(track types.Track) {
 		d.status.Active--
 		d.status.Failed++
 		d.status.LastError = fmt.Sprintf("%s: %s", track.Title, err)
+		delete(d.queued, track.ID)
+		d.failedTracks = append(d.failedTracks, track)
 		d.mu.Unlock()
 		d.notify()
 		return
@@ -184,6 +200,8 @@ func (d *Downloader) downloadTrack(track types.Track) {
 		d.status.Active--
 		d.status.Failed++
 		d.status.LastError = fmt.Sprintf("%s: %s", track.Title, err)
+		delete(d.queued, track.ID)
+		d.failedTracks = append(d.failedTracks, track)
 		d.mu.Unlock()
 		d.notify()
 		return
@@ -193,6 +211,7 @@ func (d *Downloader) downloadTrack(track types.Track) {
 	d.status.Active--
 	d.status.Completed++
 	d.downloaded[track.ID] = true
+	delete(d.queued, track.ID)
 	d.mu.Unlock()
 	d.notify()
 }
@@ -224,6 +243,35 @@ func (d *Downloader) downloadFile(url, path string) error {
 	}
 
 	return os.Rename(tmp, path)
+}
+
+// RetryFailed re-queues all previously failed tracks and resets the failed count.
+// Returns the number of tracks re-queued.
+func (d *Downloader) RetryFailed() int {
+	d.mu.Lock()
+	tracks := make([]types.Track, len(d.failedTracks))
+	copy(tracks, d.failedTracks)
+	d.failedTracks = nil
+	d.status.Failed = 0
+	d.status.LastError = ""
+	d.mu.Unlock()
+
+	for _, t := range tracks {
+		track := t
+		d.mu.Lock()
+		d.queued[track.ID] = true
+		d.status.Queued++
+		d.mu.Unlock()
+		go d.downloadTrack(track)
+	}
+	return len(tracks)
+}
+
+// FailedCount returns the number of failed downloads.
+func (d *Downloader) FailedCount() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return len(d.failedTracks)
 }
 
 func (d *Downloader) notify() {

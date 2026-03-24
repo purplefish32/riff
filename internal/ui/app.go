@@ -26,6 +26,8 @@ type streamURLMsg struct {
 	err error
 }
 
+type pingMsg struct{ online bool }
+
 type trackEndedMsg struct{ gen int }
 
 type queueAlbumMsg struct {
@@ -57,28 +59,38 @@ const (
 )
 
 type App struct {
-	mode        inputMode
-	activeTab   viewTab
-	search      searchModel
-	nowPlaying  nowPlayingModel
-	tracklist   []types.Track
-	trackPos    int // index of currently playing track, -1 if none
-	likedCursor int
-	queueCursor int // cursor for browsing the queue view
-	client      *api.Client
-	player      *player.Player
-	likes       *persistence.LikedStore
-	dl          *downloader.Downloader
-	config      *persistence.Config
-	queueStore  *persistence.QueueStore
-	playGen     int
-	quality     int
-	volume      int
-	width       int
-	height      int
-	err         error
-	statusMsg   string
-	statusTicks int // ticks remaining before status clears
+	mode             inputMode
+	activeTab        viewTab
+	search           searchModel
+	nowPlaying       nowPlayingModel
+	tracklist        []types.Track
+	trackPos         int // index of currently playing track, -1 if none
+	likedCursor      int
+	queueCursor      int // cursor for browsing the queue view
+	queueScrollOffset int
+	likedScrollOffset int
+	undoTrack        *types.Track
+	undoPos          int
+	undoTrackPos     int
+	loading          bool
+	streamRetries    int
+	selected         map[int]bool
+	online           bool
+	tickCount        int
+	client           *api.Client
+	player           *player.Player
+	likes            *persistence.LikedStore
+	dl               *downloader.Downloader
+	config           *persistence.Config
+	queueStore       *persistence.QueueStore
+	playGen          int
+	quality          int
+	volume           int
+	width            int
+	height           int
+	err              error
+	statusMsg        string
+	statusTicks      int // ticks remaining before status clears
 }
 
 func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedStore, dl *downloader.Downloader, cfg *persistence.Config, qs *persistence.QueueStore) App {
@@ -86,19 +98,38 @@ func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedS
 	if len(qs.Tracks) == 0 {
 		mode = modeSearchInput
 	}
+	queueCursor := qs.QueueCursor
+	if queueCursor >= len(qs.Tracks) && queueCursor > 0 {
+		queueCursor = len(qs.Tracks) - 1
+	}
+	if queueCursor < 0 {
+		queueCursor = 0
+	}
+	likedCursor := qs.LikedCursor
+	if likedCursor >= len(likes.Tracks) && likedCursor > 0 {
+		likedCursor = len(likes.Tracks) - 1
+	}
+	if likedCursor < 0 {
+		likedCursor = 0
+	}
 	return App{
-		mode:       mode,
-		search:     newSearchModel(),
-		client:     client,
-		player:     player,
-		likes:      likes,
-		dl:         dl,
-		config:     cfg,
-		queueStore: qs,
-		tracklist:  qs.Tracks,
-		trackPos:   qs.Position,
-		quality:    cfg.QualityIndex(),
-		volume:     cfg.Volume,
+		mode:        mode,
+		activeTab:   viewTab(qs.ActiveTab),
+		search:      newSearchModel(),
+		client:      client,
+		player:      player,
+		likes:       likes,
+		dl:          dl,
+		config:      cfg,
+		queueStore:  qs,
+		tracklist:   qs.Tracks,
+		trackPos:    qs.Position,
+		quality:     cfg.QualityIndex(),
+		volume:      cfg.Volume,
+		queueCursor: queueCursor,
+		likedCursor: likedCursor,
+		selected:    make(map[int]bool),
+		online:      true,
 	}
 }
 
@@ -108,11 +139,17 @@ func tick() tea.Cmd {
 	})
 }
 
+func (a App) doPing() tea.Cmd {
+	return func() tea.Msg {
+		return pingMsg{online: a.client.Ping()}
+	}
+}
+
 func (a App) Init() tea.Cmd {
 	if a.mode == modeSearchInput {
-		return tea.Batch(a.search.input.Focus(), tick())
+		return tea.Batch(a.search.input.Focus(), tick(), a.doPing())
 	}
-	return tick()
+	return tea.Batch(tick(), a.doPing())
 }
 
 func (a App) makeWaitForTrackEnd(gen int) tea.Cmd {
@@ -135,6 +172,8 @@ func (a App) playPos(pos int) (App, tea.Cmd) {
 	a.nowPlaying.position = 0
 	a.nowPlaying.duration = 0
 	a.err = nil
+	a.loading = true
+	a.streamRetries = 0
 	trackID := track.ID
 	q := qualities[a.quality]
 	return a, func() tea.Msg {
@@ -154,6 +193,10 @@ func (a App) addAndPlay(track *types.Track) (App, tea.Cmd) {
 
 func (a App) saveQueue() {
 	a.queueStore.Save(a.tracklist, a.trackPos)
+}
+
+func (a App) saveUIState() {
+	a.queueStore.SaveUIState(int(a.activeTab), a.queueCursor, a.likedCursor)
 }
 
 const maxTracklist = 500
@@ -269,8 +312,18 @@ func (a App) updateSearchInput(msg tea.KeyMsg) (App, tea.Cmd) {
 		if a.search.input.Value() == "" {
 			return a, nil
 		}
-		a.search.loading = true
+		if !a.online {
+			a = a.withStatus("Search unavailable — offline")
+			return a, nil
+		}
 		query := a.search.input.Value()
+		// Skip API call if query and mode are unchanged
+		if query == a.search.lastQuery && a.search.mode == a.search.lastMode {
+			return a, nil
+		}
+		a.search.loading = true
+		a.search.lastQuery = query
+		a.search.lastMode = a.search.mode
 		switch a.search.mode {
 		case modeAlbum:
 			return a, func() tea.Msg {
@@ -413,8 +466,13 @@ func (a App) updateSearchBrowse(msg tea.KeyMsg) (App, tea.Cmd) {
 		if a.dl != nil {
 			a.dl.SetQuality(qualities[a.quality])
 			if target := a.targetTrackOrNowPlaying(); target != nil {
-				a.dl.QueueTrack(*target)
-				a = a.withStatus(fmt.Sprintf("Downloading: %s", target.Title))
+				if a.dl.IsDownloaded(*target) {
+					a = a.withStatus(fmt.Sprintf("Already downloaded: %s", target.Title))
+				} else if a.dl.QueueTrack(*target) {
+					a = a.withStatus(fmt.Sprintf("Downloading: %s", target.Title))
+				} else {
+					a = a.withStatus(fmt.Sprintf("Already queued: %s", target.Title))
+				}
 			}
 		}
 		return a, nil
@@ -461,27 +519,58 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 		return a, nil
 	case "1":
 		a.activeTab = tabQueue
+		a.saveUIState()
 		return a, nil
 	case "2":
 		a.activeTab = tabLiked
+		a.saveUIState()
 		return a, nil
 	case "3":
 		a.activeTab = tabDownloads
+		a.saveUIState()
 		return a, nil
 	case "up", "k":
 		if a.activeTab == tabQueue && a.queueCursor > 0 {
 			a.queueCursor--
+			visibleRows := a.height - 12
+			if visibleRows < 1 {
+				visibleRows = 1
+			}
+			if a.queueCursor < a.queueScrollOffset {
+				a.queueScrollOffset = a.queueCursor
+			}
 		}
 		if a.activeTab == tabLiked && a.likedCursor > 0 {
 			a.likedCursor--
+			visibleRows := a.height - 12
+			if visibleRows < 1 {
+				visibleRows = 1
+			}
+			if a.likedCursor < a.likedScrollOffset {
+				a.likedScrollOffset = a.likedCursor
+			}
 		}
 		return a, nil
 	case "down", "j":
 		if a.activeTab == tabQueue && a.queueCursor < len(a.tracklist)-1 {
 			a.queueCursor++
+			visibleRows := a.height - 12
+			if visibleRows < 1 {
+				visibleRows = 1
+			}
+			if a.queueCursor >= a.queueScrollOffset+visibleRows {
+				a.queueScrollOffset = a.queueCursor - visibleRows + 1
+			}
 		}
 		if a.activeTab == tabLiked && a.likedCursor < len(a.likes.Tracks)-1 {
 			a.likedCursor++
+			visibleRows := a.height - 12
+			if visibleRows < 1 {
+				visibleRows = 1
+			}
+			if a.likedCursor >= a.likedScrollOffset+visibleRows {
+				a.likedScrollOffset = a.likedCursor - visibleRows + 1
+			}
 		}
 		return a, nil
 	case "enter":
@@ -497,6 +586,54 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 		if a.activeTab != tabQueue || len(a.tracklist) == 0 {
 			return a, nil
 		}
+		if len(a.selected) > 0 {
+			// Batch remove selected tracks (sort indices descending to avoid index shifting)
+			indices := make([]int, 0, len(a.selected))
+			for idx := range a.selected {
+				if idx >= 0 && idx < len(a.tracklist) {
+					indices = append(indices, idx)
+				}
+			}
+			// Sort descending
+			for i := 0; i < len(indices)-1; i++ {
+				for j := i + 1; j < len(indices); j++ {
+					if indices[j] > indices[i] {
+						indices[i], indices[j] = indices[j], indices[i]
+					}
+				}
+			}
+			removedPlaying := false
+			for _, idx := range indices {
+				if idx == a.trackPos {
+					removedPlaying = true
+				}
+				a.tracklist = append(a.tracklist[:idx], a.tracklist[idx+1:]...)
+				// Adjust trackPos and cursor for removed index
+				if idx < a.trackPos {
+					a.trackPos--
+				}
+				if idx <= a.queueCursor && a.queueCursor > 0 {
+					a.queueCursor--
+				}
+			}
+			a.selected = make(map[int]bool)
+			if a.queueCursor >= len(a.tracklist) && a.queueCursor > 0 {
+				a.queueCursor = len(a.tracklist) - 1
+			}
+			if removedPlaying {
+				a = a.stopPlayback()
+				a.trackPos = -1
+			}
+			a.queueStore.Save(a.tracklist, a.trackPos)
+			a = a.withStatus(fmt.Sprintf("Removed %d tracks", len(indices)))
+			return a, nil
+		}
+		// Save undo state before single removal
+		trackCopy := a.tracklist[a.queueCursor]
+		a.undoTrack = &trackCopy
+		a.undoPos = a.queueCursor
+		a.undoTrackPos = a.trackPos
+
 		removingPlaying := a.queueCursor == a.trackPos
 		a.tracklist = append(a.tracklist[:a.queueCursor], a.tracklist[a.queueCursor+1:]...)
 
@@ -521,9 +658,41 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 		}
 		a.queueStore.Save(a.tracklist, a.trackPos)
 		return a, nil
+	case "ctrl+z":
+		if a.undoTrack == nil {
+			return a, nil
+		}
+		// Re-insert the track at its original position
+		pos := a.undoPos
+		if pos > len(a.tracklist) {
+			pos = len(a.tracklist)
+		}
+		restored := make([]types.Track, len(a.tracklist)+1)
+		copy(restored, a.tracklist[:pos])
+		restored[pos] = *a.undoTrack
+		copy(restored[pos+1:], a.tracklist[pos:])
+		a.tracklist = restored
+		a.trackPos = a.undoTrackPos
+		a.queueCursor = pos
+		title := a.undoTrack.Title
+		a.undoTrack = nil
+		a.queueStore.Save(a.tracklist, a.trackPos)
+		a = a.withStatus(fmt.Sprintf("Restored: %s", title))
+		return a, nil
 	case "a":
 		if a.activeTab == tabLiked && len(a.likes.Tracks) > 0 {
-			a = a.withQueueAdd(a.likes.Tracks[a.likedCursor])
+			if len(a.selected) > 0 {
+				var toQueue []types.Track
+				for _, t := range a.likes.Tracks {
+					if a.selected[t.ID] {
+						toQueue = append(toQueue, t)
+					}
+				}
+				a.selected = make(map[int]bool)
+				a = a.withQueueAddAll(toQueue)
+			} else {
+				a = a.withQueueAdd(a.likes.Tracks[a.likedCursor])
+			}
 		}
 		return a, nil
 	case " ":
@@ -566,9 +735,25 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 	case "d":
 		if a.dl != nil {
 			a.dl.SetQuality(qualities[a.quality])
-			if target := a.targetTrackOrNowPlaying(); target != nil {
-				a.dl.QueueTrack(*target)
-				a = a.withStatus(fmt.Sprintf("Downloading: %s", target.Title))
+			if len(a.selected) > 0 && a.activeTab == tabQueue {
+				count := 0
+				for idx := range a.selected {
+					if idx >= 0 && idx < len(a.tracklist) {
+						if a.dl.QueueTrack(a.tracklist[idx]) {
+							count++
+						}
+					}
+				}
+				a.selected = make(map[int]bool)
+				a = a.withStatus(fmt.Sprintf("Downloading %d tracks", count))
+			} else if target := a.targetTrackOrNowPlaying(); target != nil {
+				if a.dl.IsDownloaded(*target) {
+					a = a.withStatus(fmt.Sprintf("Already downloaded: %s", target.Title))
+				} else if a.dl.QueueTrack(*target) {
+					a = a.withStatus(fmt.Sprintf("Downloading: %s", target.Title))
+				} else {
+					a = a.withStatus(fmt.Sprintf("Already queued: %s", target.Title))
+				}
 			}
 		}
 		return a, nil
@@ -586,6 +771,72 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 				a = a.withStatus(fmt.Sprintf("Liked: %s", target.Title))
 			} else {
 				a = a.withStatus(fmt.Sprintf("Unliked: %s", target.Title))
+			}
+		}
+		return a, nil
+	case "v":
+		if a.selected == nil {
+			a.selected = make(map[int]bool)
+		}
+		if a.activeTab == tabQueue && len(a.tracklist) > 0 {
+			if a.selected[a.queueCursor] {
+				delete(a.selected, a.queueCursor)
+			} else {
+				a.selected[a.queueCursor] = true
+			}
+		} else if a.activeTab == tabLiked && len(a.likes.Tracks) > 0 {
+			id := a.likes.Tracks[a.likedCursor].ID
+			if a.selected[id] {
+				delete(a.selected, id)
+			} else {
+				a.selected[id] = true
+			}
+		}
+		return a, nil
+	case "V":
+		if a.selected == nil {
+			a.selected = make(map[int]bool)
+		}
+		if a.activeTab == tabQueue {
+			// Toggle: if all visible are selected, deselect all; otherwise select all
+			allSelected := len(a.tracklist) > 0
+			for i := range a.tracklist {
+				if !a.selected[i] {
+					allSelected = false
+					break
+				}
+			}
+			if allSelected {
+				a.selected = make(map[int]bool)
+			} else {
+				for i := range a.tracklist {
+					a.selected[i] = true
+				}
+			}
+		} else if a.activeTab == tabLiked {
+			allSelected := len(a.likes.Tracks) > 0
+			for _, t := range a.likes.Tracks {
+				if !a.selected[t.ID] {
+					allSelected = false
+					break
+				}
+			}
+			if allSelected {
+				a.selected = make(map[int]bool)
+			} else {
+				for _, t := range a.likes.Tracks {
+					a.selected[t.ID] = true
+				}
+			}
+		}
+		return a, nil
+	case "r":
+		if a.activeTab == tabDownloads && a.dl != nil {
+			n := a.dl.RetryFailed()
+			if n > 0 {
+				a = a.withStatus(fmt.Sprintf("Retrying %d downloads", n))
+			} else {
+				a = a.withStatus("No failed downloads to retry")
 			}
 		}
 		return a, nil
@@ -608,8 +859,97 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.height = msg.Height
 		return a, nil
 
+	case tea.MouseMsg:
+		if a.mode != modeNormal {
+			return a, nil
+		}
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			if a.activeTab == tabQueue && a.queueCursor > 0 {
+				a.queueCursor--
+				visibleRows := a.height - 12
+				if visibleRows < 1 {
+					visibleRows = 1
+				}
+				if a.queueCursor < a.queueScrollOffset {
+					a.queueScrollOffset = a.queueCursor
+				}
+			}
+			if a.activeTab == tabLiked && a.likedCursor > 0 {
+				a.likedCursor--
+				visibleRows := a.height - 12
+				if visibleRows < 1 {
+					visibleRows = 1
+				}
+				if a.likedCursor < a.likedScrollOffset {
+					a.likedScrollOffset = a.likedCursor
+				}
+			}
+		case tea.MouseButtonWheelDown:
+			if a.activeTab == tabQueue && a.queueCursor < len(a.tracklist)-1 {
+				a.queueCursor++
+				visibleRows := a.height - 12
+				if visibleRows < 1 {
+					visibleRows = 1
+				}
+				if a.queueCursor >= a.queueScrollOffset+visibleRows {
+					a.queueScrollOffset = a.queueCursor - visibleRows + 1
+				}
+			}
+			if a.activeTab == tabLiked && a.likedCursor < len(a.likes.Tracks)-1 {
+				a.likedCursor++
+				visibleRows := a.height - 12
+				if visibleRows < 1 {
+					visibleRows = 1
+				}
+				if a.likedCursor >= a.likedScrollOffset+visibleRows {
+					a.likedScrollOffset = a.likedCursor - visibleRows + 1
+				}
+			}
+		case tea.MouseButtonLeft:
+			// Tab bar is at row 2 (0-indexed)
+			if msg.Y == 2 {
+				// Determine which tab was clicked based on approximate x positions
+				// Tab labels: "1:Queue(N)", "2:Liked(N)", "3:Downloads"
+				// Each tab is separated by "│"; rough x breakpoints
+				if msg.X < 15 {
+					a.activeTab = tabQueue
+					a.saveUIState()
+				} else if msg.X < 28 {
+					a.activeTab = tabLiked
+					a.saveUIState()
+				} else {
+					a.activeTab = tabDownloads
+					a.saveUIState()
+				}
+			} else if msg.Y >= 5 {
+				// Content area starts around row 5 (header row 4, then tracks)
+				// Row 5 = track header, row 6 onwards = tracks
+				contentRow := msg.Y - 6
+				if contentRow >= 0 {
+					if a.activeTab == tabQueue {
+						idx := a.queueScrollOffset + contentRow
+						if idx >= 0 && idx < len(a.tracklist) {
+							a.queueCursor = idx
+						}
+					} else if a.activeTab == tabLiked {
+						idx := a.likedScrollOffset + contentRow
+						if idx >= 0 && idx < len(a.likes.Tracks) {
+							a.likedCursor = idx
+						}
+					}
+				}
+			}
+		}
+		return a, nil
+
+	case pingMsg:
+		a.online = msg.online
+		return a, nil
+
 	case tickMsg:
 		a = a.syncNowPlaying()
+		a.tickCount++
 		if a.statusTicks > 0 {
 			a.statusTicks--
 			if a.statusTicks == 0 {
@@ -622,6 +962,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.nowPlaying.position = pos
 				a.nowPlaying.duration = dur
 			}
+		}
+		// Re-ping every 10 ticks when offline
+		if !a.online && a.tickCount%10 == 0 {
+			return a, tea.Batch(tick(), a.doPing())
 		}
 		return a, tick()
 
@@ -643,9 +987,30 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case streamURLMsg:
 		if msg.err != nil {
+			if isNetworkError(msg.err) {
+				a.online = false
+			}
+			if a.streamRetries < 1 {
+				a.streamRetries++
+				// Auto-retry once on error
+				if a.trackPos >= 0 && a.trackPos < len(a.tracklist) {
+					track := &a.tracklist[a.trackPos]
+					trackID := track.ID
+					q := qualities[a.quality]
+					return a, func() tea.Msg {
+						url, err := a.client.GetStreamURL(trackID, q)
+						return streamURLMsg{url: url, err: err}
+					}
+				}
+			}
+			a.loading = false
+			a.streamRetries = 0
 			a.err = msg.err
 			return a, nil
 		}
+		a.loading = false
+		a.streamRetries = 0
+		a.online = true
 		if err := a.player.Play(msg.url); err != nil {
 			a.err = err
 			return a, nil
@@ -665,9 +1030,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case queueAlbumMsg:
 		if msg.err != nil {
+			if isNetworkError(msg.err) {
+				a.online = false
+			}
 			a.err = msg.err
 			return a, nil
 		}
+		a.online = true
 		a = a.withQueueAddAll(msg.tracks)
 		return a, nil
 
@@ -715,6 +1084,7 @@ func (a App) renderTabBar() string {
 		{"3:Downloads", tabDownloads},
 	}
 
+	selCount := len(a.selected)
 	var parts []string
 	for _, t := range tabs {
 		label := t.label
@@ -723,6 +1093,9 @@ func (a App) renderTabBar() string {
 		}
 		if t.tab == tabLiked && len(a.likes.Tracks) > 0 {
 			label = fmt.Sprintf("2:Liked(%d)", len(a.likes.Tracks))
+		}
+		if selCount > 0 && t.tab == a.activeTab {
+			label += fmt.Sprintf(" [%d sel]", selCount)
 		}
 		if t.tab == a.activeTab {
 			parts = append(parts, selectedStyle.Render(" "+label+" "))
@@ -738,15 +1111,32 @@ func (a App) renderQueueView() string {
 		return dimStyle.Render("  Queue is empty. Press 'a' on a track to add it.")
 	}
 
+	visibleRows := a.height - 12
+	if visibleRows < 1 {
+		visibleRows = 1
+	}
+
 	tc := computeTrackCols(a.width)
 	s := trackHeader(tc) + "\n"
-	for i, t := range a.tracklist {
+
+	end := a.queueScrollOffset + visibleRows
+	if end > len(a.tracklist) {
+		end = len(a.tracklist)
+	}
+
+	if a.queueScrollOffset > 0 {
+		s += dimStyle.Render(fmt.Sprintf("  ^ %d more above", a.queueScrollOffset)) + "\n"
+	}
+
+	for i := a.queueScrollOffset; i < end; i++ {
+		t := a.tracklist[i]
 		isPlaying := i == a.trackPos
 		isCursor := i == a.queueCursor
 		played := a.trackPos >= 0 && i < a.trackPos
 
 		duration := fmt.Sprintf("%d:%02d", t.Duration/60, t.Duration%60)
 		num := fmt.Sprintf("%d", i+1)
+		isSelected := a.selected[i]
 		icons := statusIcons(a.likes.IsLiked(t.ID), a.dl != nil && a.dl.IsDownloaded(t))
 
 		var numSt, artSt, albSt, titSt, durSt lipgloss.Style
@@ -769,6 +1159,9 @@ func (a App) renderQueueView() string {
 			marker = " "
 			numSt, artSt, albSt, titSt, durSt = dimStyle, artistStyle, dimStyle, normalStyle, dimStyle
 		}
+		if isSelected {
+			marker = titleStyle.Render("●")
+		}
 
 		row := marker + icons +
 			col(num, colNum, numSt) +
@@ -783,6 +1176,11 @@ func (a App) renderQueueView() string {
 		row += col(duration, colDuration, durSt)
 		s += row + "\n"
 	}
+
+	if end < len(a.tracklist) {
+		s += dimStyle.Render(fmt.Sprintf("  v %d more below", len(a.tracklist)-end)) + "\n"
+	}
+
 	s += "\n" + dimStyle.Render("  enter play  x remove  / search")
 	return s
 }
@@ -792,11 +1190,37 @@ func (a App) renderLikedView() string {
 		return dimStyle.Render("  No liked tracks yet. Press 'l' on a track to like it.")
 	}
 
+	visibleRows := a.height - 12
+	if visibleRows < 1 {
+		visibleRows = 1
+	}
+
 	tc := computeTrackCols(a.width)
 	s := trackHeader(tc) + "\n"
-	for i, t := range a.likes.Tracks {
-		s += trackRow(i, t, i == a.likedCursor, true, a.dl != nil && a.dl.IsDownloaded(t), tc) + "\n"
+
+	end := a.likedScrollOffset + visibleRows
+	if end > len(a.likes.Tracks) {
+		end = len(a.likes.Tracks)
 	}
+
+	if a.likedScrollOffset > 0 {
+		s += dimStyle.Render(fmt.Sprintf("  ^ %d more above", a.likedScrollOffset)) + "\n"
+	}
+
+	for i := a.likedScrollOffset; i < end; i++ {
+		t := a.likes.Tracks[i]
+		row := trackRow(i, t, i == a.likedCursor, true, a.dl != nil && a.dl.IsDownloaded(t), tc)
+		if a.selected[t.ID] {
+			// Replace leading space/cursor with selection marker
+			row = titleStyle.Render("●") + row[1:]
+		}
+		s += row + "\n"
+	}
+
+	if end < len(a.likes.Tracks) {
+		s += dimStyle.Render(fmt.Sprintf("  v %d more below", len(a.likes.Tracks)-end)) + "\n"
+	}
+
 	s += "\n" + dimStyle.Render("  enter play  a queue  l unlike")
 	return s
 }
@@ -838,8 +1262,16 @@ func (a App) renderDownloadsView() string {
 
 func (a App) View() string {
 	header := titleStyle.Render("♫ riff")
+	if !a.online {
+		header += "  " + errorStyle.Render("OFFLINE")
+	}
 
-	np := a.nowPlaying.View(a.width)
+	var np string
+	if a.loading {
+		np = nowPlayingStyle.Render(dimStyle.Render("  Loading stream..."))
+	} else {
+		np = a.nowPlaying.View(a.width)
+	}
 	tabBar := a.renderTabBar()
 
 	errView := ""
@@ -947,6 +1379,19 @@ func helpLine(key, desc string) string {
 		titleStyle.Width(12).Render(key),
 		desc,
 	)
+}
+
+// isNetworkError returns true if the error looks like a connectivity failure.
+func isNetworkError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "connection refused") ||
+		strings.Contains(s, "no such host") ||
+		strings.Contains(s, "i/o timeout") ||
+		strings.Contains(s, "network") ||
+		strings.Contains(s, "all instances failed")
 }
 
 func openBrowser(url string) {
