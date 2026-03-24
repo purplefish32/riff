@@ -2,6 +2,7 @@ package persistence
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -27,7 +28,9 @@ func LoadConfig() *Config {
 
 	data, err := os.ReadFile(c.path)
 	if err == nil {
-		json.Unmarshal(data, c)
+		if err := json.Unmarshal(data, c); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: corrupt config.json, using defaults: %s\n", err)
+		}
 	}
 
 	// Validate

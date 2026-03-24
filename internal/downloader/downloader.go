@@ -3,6 +3,7 @@ package downloader
 import (
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -22,6 +23,7 @@ type Status struct {
 	Failed    int
 	Queued    int
 	Current   string
+	LastError string
 }
 
 type Downloader struct {
@@ -32,9 +34,10 @@ type Downloader struct {
 	status   Status
 	onUpdate func()
 	sem      chan struct{}
+	log      *log.Logger
 }
 
-func New(client *api.Client, quality string, onUpdate func()) *Downloader {
+func New(client *api.Client, quality string, onUpdate func(), logger *log.Logger) *Downloader {
 	home, _ := os.UserHomeDir()
 	return &Downloader{
 		client:   client,
@@ -42,6 +45,7 @@ func New(client *api.Client, quality string, onUpdate func()) *Downloader {
 		quality:  quality,
 		onUpdate: onUpdate,
 		sem:      make(chan struct{}, maxConcurrent),
+		log:      logger,
 	}
 }
 
@@ -61,6 +65,12 @@ func (d *Downloader) SetQuality(q string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.quality = q
+}
+
+func (d *Downloader) SetOnUpdate(fn func()) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.onUpdate = fn
 }
 
 func (d *Downloader) QueueTrack(track types.Track) {
@@ -143,18 +153,22 @@ func (d *Downloader) downloadTrack(track types.Track) {
 
 	url, err := d.client.GetStreamURL(track.ID, q)
 	if err != nil {
+		d.log.Printf("download failed (stream URL): %s - %s: %s", track.Artist.Name, track.Title, err)
 		d.mu.Lock()
 		d.status.Active--
 		d.status.Failed++
+		d.status.LastError = fmt.Sprintf("%s: %s", track.Title, err)
 		d.mu.Unlock()
 		d.notify()
 		return
 	}
 
 	if err := d.downloadFile(url, path); err != nil {
+		d.log.Printf("download failed (file write): %s - %s: %s", track.Artist.Name, track.Title, err)
 		d.mu.Lock()
 		d.status.Active--
 		d.status.Failed++
+		d.status.LastError = fmt.Sprintf("%s: %s", track.Title, err)
 		d.mu.Unlock()
 		d.notify()
 		return

@@ -18,6 +18,9 @@ import (
 
 type errMsg struct{ err error }
 
+// DownloadUpdateMsg is sent when download status changes.
+type DownloadUpdateMsg struct{}
+
 type streamURLMsg struct {
 	url string
 	err error
@@ -535,6 +538,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a = a.withQueueAddAll(msg.tracks)
 		return a, nil
 
+	case DownloadUpdateMsg:
+		return a, nil
+
 	case errMsg:
 		a.err = msg.err
 		return a, nil
@@ -671,8 +677,11 @@ func (a App) renderDownloadsView() string {
 		s += dimStyle.Render(fmt.Sprintf("  Completed: %d", st.Completed)) + "\n"
 	}
 	if st.Failed > 0 {
-		s += lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000")).
-			Render(fmt.Sprintf("  Failed: %d", st.Failed)) + "\n"
+		failStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000"))
+		s += failStyle.Render(fmt.Sprintf("  Failed: %d", st.Failed)) + "\n"
+		if st.LastError != "" {
+			s += failStyle.Render(fmt.Sprintf("  Last error: %s", st.LastError)) + "\n"
+		}
 	}
 
 	return s

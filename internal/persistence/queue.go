@@ -2,6 +2,7 @@ package persistence
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -26,7 +27,9 @@ func NewQueueStore() *QueueStore {
 
 	data, err := os.ReadFile(s.path)
 	if err == nil {
-		json.Unmarshal(data, s)
+		if err := json.Unmarshal(data, s); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: corrupt queue.json, starting fresh: %s\n", err)
+		}
 	}
 
 	// Validate position

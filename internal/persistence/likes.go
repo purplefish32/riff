@@ -2,6 +2,7 @@ package persistence
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -30,7 +31,9 @@ func NewLikedStore() (*LikedStore, error) {
 
 	data, err := os.ReadFile(s.path)
 	if err == nil {
-		json.Unmarshal(data, s)
+		if err := json.Unmarshal(data, s); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: corrupt liked.json, starting fresh: %s\n", err)
+		}
 	}
 
 	for _, t := range s.Tracks {
