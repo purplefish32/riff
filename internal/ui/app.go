@@ -1074,15 +1074,28 @@ func (a App) dlCheck() func(types.Track) bool {
 	return a.dl.IsDownloaded
 }
 
+func (a App) hasDownloadActivity() bool {
+	if a.dl == nil {
+		return false
+	}
+	st := a.dl.Status()
+	return st.Active+st.Completed+st.Failed+st.Queued > 0
+}
+
 func (a App) renderTabBar() string {
-	tabs := []struct {
+	type tabEntry struct {
 		label string
 		tab   viewTab
-	}{
+	}
+	tabs := []tabEntry{
 		{"1:Queue", tabQueue},
 		{"2:Liked", tabLiked},
-		{"3:Downloads", tabDownloads},
 	}
+	if a.hasDownloadActivity() {
+		tabs = append(tabs, tabEntry{"3:Downloads", tabDownloads})
+	}
+
+	dimmedAll := a.searchVisible() || a.mode == modeHelp
 
 	selCount := len(a.selected)
 	var parts []string
@@ -1097,7 +1110,7 @@ func (a App) renderTabBar() string {
 		if selCount > 0 && t.tab == a.activeTab {
 			label += fmt.Sprintf(" [%d sel]", selCount)
 		}
-		if t.tab == a.activeTab {
+		if !dimmedAll && t.tab == a.activeTab {
 			parts = append(parts, selectedStyle.Render(" "+label+" "))
 		} else {
 			parts = append(parts, dimStyle.Render(" "+label+" "))
