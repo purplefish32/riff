@@ -52,6 +52,30 @@ riff/
 - **Single reader goroutine for mpv IPC** — routes command responses via `map[requestID]chan` and events via dedicated channel. Prevents concurrent read conflicts.
 - **Tracklist with position pointer** — Spotify-like queue where tracks stay in the list after playing. Position moves forward/backward.
 - **Search as popup overlay** — search floats over any tab, dismissed with esc.
+- **State machine for input modes** — single `inputMode` enum (`modeNormal`, `modeSearchInput`, `modeSearchBrowse`, `modeHelp`) replaces boolean soup. Each mode has its own key handler method. Add new modes by adding a const + handler method + case in Update().
+- **Never call prog.Send() from Update()** — calling `prog.Send()` during the bubbletea Update cycle deadlocks because the event loop can't drain the message channel. The downloader's `notify()` callback must only be called from background goroutines, never synchronously from key handlers.
+
+## UI Conventions
+
+Follow these when modifying the TUI:
+
+- **View() must be pure** — no state mutations in View(). All state sync (nowPlaying quality/volume/liked) happens in the tick handler via `syncNowPlaying()`.
+- **Shared styles only** — all colors defined in `styles.go`. No inline `lipgloss.NewStyle().Foreground(lipgloss.Color(...))`. Use named styles: `titleStyle`, `artistStyle`, `dimStyle`, `errorStyle`, `downloadIcon`, `overlayBorder`.
+- **NO_COLOR support** — `styles.go` checks `NO_COLOR` env var. When set, styles use bold/reverse instead of color. All new styles must have a no-color variant in the `init()` function.
+- **Responsive breakpoints** — `computeTrackCols(width)` adapts columns at 3 thresholds:
+  - `< 40`: title only, no progress bar
+  - `< 60`: artist + title, hide album/year
+  - `< 90`: hide year column
+  - `>= 90`: full layout
+- **Compact header** — ASCII art banner at normal height, falls back to single-line `"riff"` when terminal height < 20.
+- **Right-align numeric columns** — use `colRight()` for `#`, `Year`, `Time`, `Tracks`. Text columns use `col()` (left-aligned).
+- **Progressive disclosure** — Downloads tab only visible when downloads exist. Status line only renders when non-empty. Don't show UI elements with zero content.
+- **Status feedback** — every user action (queue, like, download, quality change) shows a 3-tick status message via `withStatus()`. Messages fade: bright → dim → gone.
+- **Spinner for async ops** — loading states use a braille spinner (`⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`) cycling on tick. Thread the current frame via `spinnerFrames[a.spinnerIdx]`.
+- **Tick interval is 100ms** — for smooth spinner. Position/duration updates run every 10th tick. Status countdown runs every 10th tick. Use `a.tickCount % 10 == 0` guards.
+- **Download cache** — `IsDownloaded()` checks an in-memory map before `os.Stat()`. Cache is populated on download completion and first filesystem check. Never call `os.Stat()` per track per render without caching.
+- **Borders only on overlays** — search popup and help popup use `overlayBorder`. Tab content areas use whitespace separation, not borders.
+- **Dim inactive panels** — when search/help overlay is open, render all tabs in dimStyle to show the tab bar is inactive.
 
 ## Dev Commands
 
