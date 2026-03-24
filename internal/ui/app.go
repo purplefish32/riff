@@ -1176,17 +1176,23 @@ func (a App) renderQueueView() string {
 			marker = titleStyle.Render("●")
 		}
 
-		row := marker + icons +
-			colRight(num, colNum, numSt) +
-			col(t.Artist.Name, tc.artist, artSt) +
-			col(t.Title, tc.title, titSt)
-		if tc.showAlbum {
-			row += col(t.Album.Title, tc.album, albSt)
+		var row string
+		if tc.artist == 0 {
+			// Ultra-narrow: title only
+			row = marker + icons + col(t.Title, tc.title, titSt)
+		} else {
+			row = marker + icons +
+				colRight(num, colNum, numSt) +
+				col(t.Artist.Name, tc.artist, artSt) +
+				col(t.Title, tc.title, titSt)
+			if tc.showAlbum {
+				row += col(t.Album.Title, tc.album, albSt)
+			}
+			if tc.showYear {
+				row += colRight(trackYear(t), colYear, durSt)
+			}
+			row += colRight(duration, colDuration, durSt)
 		}
-		if tc.showYear {
-			row += colRight(trackYear(t), colYear, durSt)
-		}
-		row += colRight(duration, colDuration, durSt)
 		s += row + "\n"
 	}
 

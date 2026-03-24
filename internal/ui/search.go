@@ -162,6 +162,18 @@ type trackCols struct {
 }
 
 func computeTrackCols(width int) trackCols {
+	// Below 40 cols: minimal layout — title only, no number or artist
+	if width < 40 {
+		avail := width - 4
+		if avail < 10 {
+			avail = 10
+		}
+		return trackCols{
+			title:     avail,
+			showAlbum: false,
+			showYear:  false,
+		}
+	}
 	// Below 60 cols: hide album and year columns
 	if width < 60 {
 		fixed := colLike + colNum + colDuration + 4
@@ -217,6 +229,10 @@ func computeAlbumCols(width int) albumCols {
 }
 
 func trackHeader(tc trackCols) string {
+	// Ultra-narrow: just title header
+	if tc.artist == 0 {
+		return "  " + col("Title", tc.title, headerStyle)
+	}
 	s := "  " +
 		colRight("#", colNum, headerStyle) +
 		col("Artist", tc.artist, headerStyle) +
@@ -254,6 +270,14 @@ func trackRow(i int, track types.Track, selected bool, liked bool, downloaded bo
 	duration := fmt.Sprintf("%d:%02d", track.Duration/60, track.Duration%60)
 	num := fmt.Sprintf("%d", i+1)
 	icons := statusIcons(liked, downloaded)
+
+	// Ultra-narrow: title only
+	if tc.artist == 0 {
+		if selected {
+			return titleStyle.Render("▸") + icons + col(track.Title, tc.title, selectedStyle)
+		}
+		return " " + icons + col(track.Title, tc.title, normalStyle)
+	}
 
 	if selected {
 		s := titleStyle.Render("▸") + icons +
