@@ -79,7 +79,6 @@ func (d *Downloader) QueueTrack(track types.Track) {
 	d.mu.Lock()
 	d.status.Queued++
 	d.mu.Unlock()
-	d.notify()
 	go d.downloadTrack(track)
 }
 
@@ -87,7 +86,6 @@ func (d *Downloader) QueueAlbum(tracks []types.Track) {
 	d.mu.Lock()
 	d.status.Queued += len(tracks)
 	d.mu.Unlock()
-	d.notify()
 	for _, t := range tracks {
 		track := t
 		go d.downloadTrack(track)
