@@ -15,7 +15,7 @@ type Config struct {
 
 func LoadConfig() *Config {
 	configDir, _ := os.UserConfigDir()
-	dir := filepath.Join(configDir, "spofree-cli")
+	dir := filepath.Join(configDir, "riff")
 	os.MkdirAll(dir, 0o755)
 
 	c := &Config{

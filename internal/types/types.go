@@ -7,9 +7,10 @@ type Artist struct {
 }
 
 type Album struct {
-	ID    int    `json:"id"`
-	Title string `json:"title"`
-	Cover string `json:"cover"`
+	ID          int    `json:"id"`
+	Title       string `json:"title"`
+	Cover       string `json:"cover"`
+	ReleaseDate string `json:"releaseDate,omitempty"`
 }
 
 type AlbumFull struct {
@@ -75,10 +76,11 @@ type AlbumTrackItem struct {
 
 type AlbumResponse struct {
 	Data struct {
-		ID     int              `json:"id"`
-		Title  string           `json:"title"`
-		Artist Artist           `json:"artist"`
-		Items  []AlbumTrackItem `json:"items"`
+		ID          int              `json:"id"`
+		Title       string           `json:"title"`
+		ReleaseDate string           `json:"releaseDate"`
+		Artist      Artist           `json:"artist"`
+		Items       []AlbumTrackItem `json:"items"`
 	} `json:"data"`
 }
 

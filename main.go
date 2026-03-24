@@ -1,18 +1,30 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/purplefish32/spofree-cli/internal/api"
-	"github.com/purplefish32/spofree-cli/internal/downloader"
-	"github.com/purplefish32/spofree-cli/internal/persistence"
-	"github.com/purplefish32/spofree-cli/internal/player"
-	"github.com/purplefish32/spofree-cli/internal/ui"
+	"github.com/purplefish32/riff/internal/api"
+	"github.com/purplefish32/riff/internal/downloader"
+	"github.com/purplefish32/riff/internal/persistence"
+	"github.com/purplefish32/riff/internal/player"
+	"github.com/purplefish32/riff/internal/ui"
 )
 
+const version = "0.1.0"
+
 func main() {
+	showVersion := flag.Bool("version", false, "Show version")
+	flag.Parse()
+	if *showVersion {
+		fmt.Println("riff v" + version)
+		return
+	}
+
 	cfg := persistence.LoadConfig()
 	client := api.New()
 
@@ -21,9 +33,17 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
 	}
+
+	// Ensure mpv is cleaned up on any exit path
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		p.Close()
+		os.Exit(0)
+	}()
 	defer p.Close()
 
-	// Set initial volume from config
 	p.SetVolume(cfg.Volume)
 
 	likes, err := persistence.NewLikedStore()
@@ -37,7 +57,9 @@ func main() {
 		dl.SetBaseDir(cfg.DownloadDir)
 	}
 
-	app := ui.NewApp(client, p, likes, dl, cfg)
+	qs := persistence.NewQueueStore()
+
+	app := ui.NewApp(client, p, likes, dl, cfg, qs)
 	prog := tea.NewProgram(app, tea.WithAltScreen())
 
 	if _, err := prog.Run(); err != nil {

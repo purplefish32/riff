@@ -1,4 +1,4 @@
-module github.com/purplefish32/spofree-cli
+module github.com/purplefish32/riff
 
 go 1.24.2
 

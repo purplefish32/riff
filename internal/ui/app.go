@@ -9,11 +9,11 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/purplefish32/spofree-cli/internal/api"
-	"github.com/purplefish32/spofree-cli/internal/downloader"
-	"github.com/purplefish32/spofree-cli/internal/persistence"
-	"github.com/purplefish32/spofree-cli/internal/player"
-	"github.com/purplefish32/spofree-cli/internal/types"
+	"github.com/purplefish32/riff/internal/api"
+	"github.com/purplefish32/riff/internal/downloader"
+	"github.com/purplefish32/riff/internal/persistence"
+	"github.com/purplefish32/riff/internal/player"
+	"github.com/purplefish32/riff/internal/types"
 )
 
 type errMsg struct{ err error }
@@ -34,16 +34,29 @@ var qualities = []string{"LOW", "HIGH", "LOSSLESS", "HI_RES"}
 
 type tickMsg struct{}
 
+type viewTab int
+
+const (
+	tabQueue viewTab = iota
+	tabLiked
+	tabDownloads
+)
+
 type App struct {
-	search     searchModel
-	nowPlaying nowPlayingModel
-	queue      []types.Track
-	history    []types.Track
+	activeTab   viewTab
+	searchOpen  bool
+	search      searchModel
+	nowPlaying  nowPlayingModel
+	tracklist   []types.Track
+	trackPos    int // index of currently playing track, -1 if none
+	likedCursor int
+	queueCursor int // cursor for browsing the queue view
 	client     *api.Client
 	player     *player.Player
 	likes      *persistence.LikedStore
 	dl         *downloader.Downloader
 	config     *persistence.Config
+	queueStore *persistence.QueueStore
 	playGen    int
 	quality    int
 	volume     int
@@ -53,16 +66,20 @@ type App struct {
 	err        error
 }
 
-func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedStore, dl *downloader.Downloader, cfg *persistence.Config) App {
+func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedStore, dl *downloader.Downloader, cfg *persistence.Config, qs *persistence.QueueStore) App {
 	return App{
-		search:  newSearchModel(),
-		client:  client,
-		player:  player,
-		likes:   likes,
-		dl:      dl,
-		config:  cfg,
-		quality: cfg.QualityIndex(),
-		volume:  cfg.Volume,
+		search:     newSearchModel(),
+		searchOpen: len(qs.Tracks) == 0,
+		client:     client,
+		player:     player,
+		likes:      likes,
+		dl:         dl,
+		config:     cfg,
+		queueStore: qs,
+		tracklist:  qs.Tracks,
+		trackPos:   qs.Position,
+		quality:    cfg.QualityIndex(),
+		volume:     cfg.Volume,
 	}
 }
 
@@ -73,7 +90,10 @@ func tick() tea.Cmd {
 }
 
 func (a App) Init() tea.Cmd {
-	return tea.Batch(a.search.input.Focus(), tick())
+	if a.searchOpen {
+		return tea.Batch(a.search.input.Focus(), tick())
+	}
+	return tick()
 }
 
 func (a App) makeWaitForTrackEnd(gen int) tea.Cmd {
@@ -83,11 +103,14 @@ func (a App) makeWaitForTrackEnd(gen int) tea.Cmd {
 	}
 }
 
-func (a App) playTrack(track *types.Track) (App, tea.Cmd) {
-	a.playGen++
-	if a.nowPlaying.track != nil {
-		a.history = append(a.history, *a.nowPlaying.track)
+func (a App) playPos(pos int) (App, tea.Cmd) {
+	if pos < 0 || pos >= len(a.tracklist) {
+		return a, nil
 	}
+	a.playGen++
+	a.trackPos = pos
+	a.queueStore.Save(a.tracklist, a.trackPos)
+	track := &a.tracklist[pos]
 	a.nowPlaying.track = track
 	a.nowPlaying.paused = false
 	a.nowPlaying.position = 0
@@ -99,6 +122,45 @@ func (a App) playTrack(track *types.Track) (App, tea.Cmd) {
 		url, err := a.client.GetStreamURL(trackID, q)
 		return streamURLMsg{url: url, err: err}
 	}
+}
+
+// addAndPlay appends a track to the tracklist and plays it.
+func (a App) addAndPlay(track *types.Track) (App, tea.Cmd) {
+	// Insert after current position
+	insertPos := a.trackPos + 1
+	if insertPos > len(a.tracklist) {
+		insertPos = len(a.tracklist)
+	}
+	a.tracklist = append(a.tracklist[:insertPos], append([]types.Track{*track}, a.tracklist[insertPos:]...)...)
+	return a.playPos(insertPos)
+}
+
+func (a App) saveQueue() {
+	a.queueStore.Save(a.tracklist, a.trackPos)
+}
+
+const maxTracklist = 500
+
+func (a App) withQueueAdd(track types.Track) App {
+	if len(a.tracklist) >= maxTracklist {
+		return a
+	}
+	a.tracklist = append(a.tracklist, track)
+	a.saveQueue()
+	return a
+}
+
+func (a App) withQueueAddAll(tracks []types.Track) App {
+	remaining := maxTracklist - len(a.tracklist)
+	if remaining <= 0 {
+		return a
+	}
+	if len(tracks) > remaining {
+		tracks = tracks[:remaining]
+	}
+	a.tracklist = append(a.tracklist, tracks...)
+	a.saveQueue()
+	return a
 }
 
 func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -124,7 +186,100 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !a.search.input.Focused() {
 				return a, tea.Quit
 			}
+		case "1":
+			if !a.search.input.Focused() {
+				a.activeTab = tabQueue
+				a.searchOpen = false
+				return a, nil
+			}
+		case "2":
+			if !a.search.input.Focused() {
+				a.activeTab = tabLiked
+				a.searchOpen = false
+				return a, nil
+			}
+		case "3":
+			if !a.search.input.Focused() {
+				a.activeTab = tabDownloads
+				a.searchOpen = false
+				return a, nil
+			}
+		case "up", "k":
+			if !a.searchOpen {
+				if a.activeTab == tabQueue {
+					if a.queueCursor > 0 {
+						a.queueCursor--
+					}
+					return a, nil
+				}
+				if a.activeTab == tabLiked {
+					if a.likedCursor > 0 {
+						a.likedCursor--
+					}
+					return a, nil
+				}
+			}
+		case "down", "j":
+			if !a.searchOpen {
+				if a.activeTab == tabQueue {
+					if a.queueCursor < len(a.tracklist)-1 {
+						a.queueCursor++
+					}
+					return a, nil
+				}
+				if a.activeTab == tabLiked {
+					if a.likedCursor < len(a.likes.Tracks)-1 {
+						a.likedCursor++
+					}
+					return a, nil
+				}
+			}
+		case "x":
+			if !a.searchOpen && !a.search.input.Focused() && a.activeTab == tabQueue && len(a.tracklist) > 0 {
+				removingPlaying := a.queueCursor == a.trackPos
+
+				a.tracklist = append(a.tracklist[:a.queueCursor], a.tracklist[a.queueCursor+1:]...)
+
+				if removingPlaying {
+					a.player.Stop()
+					a.nowPlaying.track = nil
+					a.nowPlaying.paused = false
+					a.nowPlaying.position = 0
+					a.nowPlaying.duration = 0
+					a.playGen++
+
+					if a.queueCursor >= len(a.tracklist) && a.queueCursor > 0 {
+						a.queueCursor--
+					}
+					// Auto-advance if there are tracks left
+					if len(a.tracklist) > 0 {
+						pos := a.queueCursor
+						a.queueStore.Save(a.tracklist, pos)
+						return a.playPos(pos)
+					}
+					a.trackPos = -1
+				} else {
+					if a.queueCursor < a.trackPos {
+						a.trackPos--
+					}
+					if a.queueCursor >= len(a.tracklist) && a.queueCursor > 0 {
+						a.queueCursor--
+					}
+				}
+				a.queueStore.Save(a.tracklist, a.trackPos)
+				return a, nil
+			}
 		case "enter":
+			// Tab views: only when search popup is closed
+			if !a.searchOpen {
+				if a.activeTab == tabQueue && len(a.tracklist) > 0 {
+					return a.playPos(a.queueCursor)
+				}
+				if a.activeTab == tabLiked && len(a.likes.Tracks) > 0 {
+					track := a.likes.Tracks[a.likedCursor]
+					return a.addAndPlay(&track)
+				}
+			}
 			if a.search.input.Focused() && a.search.input.Value() != "" {
 				a.search.loading = true
 				query := a.search.input.Value()
@@ -169,7 +324,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			if track := a.search.selectedTrack(); track != nil {
-				return a.playTrack(track)
+				return a.addAndPlay(track)
 			}
 		case " ":
 			if !a.search.input.Focused() && a.nowPlaying.track != nil {
@@ -189,7 +344,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "a":
 			if !a.search.input.Focused() {
-				// In album browse mode: queue selected track
+				// Liked tab: add liked track to tracklist
+				if a.activeTab == tabLiked && len(a.likes.Tracks) > 0 {
+					a = a.withQueueAdd(a.likes.Tracks[a.likedCursor])
+					return a, nil
+				}
 				// In album search mode: fetch and queue all album tracks
 				if a.search.mode == modeAlbum {
 					if album := a.search.selectedAlbum(); album != nil {
@@ -201,47 +360,28 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 				if track := a.search.selectedTrack(); track != nil {
-					a.queue = append(a.queue, *track)
+					a = a.withQueueAdd(*track)
 				}
 				return a, nil
 			}
 		case "A":
 			if !a.search.input.Focused() {
 				if tracks := a.search.browsingAlbumTracks(); len(tracks) > 0 {
-					a.queue = append(a.queue, tracks...)
+					a = a.withQueueAddAll(tracks)
 				}
 				return a, nil
 			}
 		case "n":
 			if !a.search.input.Focused() {
-				if len(a.queue) > 0 {
-					next := a.queue[0]
-					a.queue = a.queue[1:]
-					return a.playTrack(&next)
+				if a.trackPos < len(a.tracklist)-1 {
+					return a.playPos(a.trackPos + 1)
 				}
 				return a, nil
 			}
 		case "p":
 			if !a.search.input.Focused() {
-				if len(a.history) > 0 {
-					prev := a.history[len(a.history)-1]
-					a.history = a.history[:len(a.history)-1]
-					// Put current track back at front of queue
-					if a.nowPlaying.track != nil {
-						a.queue = append([]types.Track{*a.nowPlaying.track}, a.queue...)
-					}
-					a.playGen++
-					a.nowPlaying.track = &prev
-					a.nowPlaying.paused = false
-					a.nowPlaying.position = 0
-					a.nowPlaying.duration = 0
-					a.err = nil
-					trackID := prev.ID
-					q := qualities[a.quality]
-					return a, func() tea.Msg {
-						url, err := a.client.GetStreamURL(trackID, q)
-						return streamURLMsg{url: url, err: err}
-					}
+				if a.trackPos > 0 {
+					return a.playPos(a.trackPos - 1)
 				}
 				return a, nil
 			}
@@ -280,10 +420,20 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "d":
 			if !a.search.input.Focused() && a.dl != nil {
 				a.dl.SetQuality(qualities[a.quality])
-				if track := a.search.selectedTrack(); track != nil {
-					a.dl.QueueTrack(*track)
-				} else if a.nowPlaying.track != nil {
-					a.dl.QueueTrack(*a.nowPlaying.track)
+				var target *types.Track
+				switch {
+				case a.searchOpen:
+					target = a.search.selectedTrack()
+				case a.activeTab == tabQueue && len(a.tracklist) > 0:
+					target = &a.tracklist[a.queueCursor]
+				case a.activeTab == tabLiked && len(a.likes.Tracks) > 0:
+					target = &a.likes.Tracks[a.likedCursor]
+				}
+				if target == nil && a.nowPlaying.track != nil {
+					target = a.nowPlaying.track
+				}
+				if target != nil {
+					a.dl.QueueTrack(*target)
 				}
 				return a, nil
 			}
@@ -297,10 +447,20 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "l":
 			if !a.search.input.Focused() {
-				if track := a.search.selectedTrack(); track != nil {
-					a.likes.Toggle(*track)
-				} else if a.nowPlaying.track != nil {
-					a.likes.Toggle(*a.nowPlaying.track)
+				var target *types.Track
+				switch {
+				case a.searchOpen:
+					target = a.search.selectedTrack()
+				case a.activeTab == tabQueue && len(a.tracklist) > 0:
+					target = &a.tracklist[a.queueCursor]
+				case a.activeTab == tabLiked && len(a.likes.Tracks) > 0:
+					target = &a.likes.Tracks[a.likedCursor]
+				}
+				if target == nil && a.nowPlaying.track != nil {
+					target = a.nowPlaying.track
+				}
+				if target != nil {
+					a.likes.Toggle(*target)
 				}
 				return a, nil
 			}
@@ -328,10 +488,16 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.showHelp = false
 				return a, nil
 			}
+			if a.searchOpen {
+				a.search.input.Blur()
+				a.searchOpen = false
+				return a, nil
+			}
 			a.search.input.Blur()
 			return a, nil
 		case "/":
 			if !a.search.input.Focused() {
+				a.searchOpen = true
 				a.showHelp = false
 				a.search.input.Focus()
 				return a, nil
@@ -353,10 +519,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.gen != a.playGen {
 			return a, nil
 		}
-		if len(a.queue) > 0 {
-			next := a.queue[0]
-			a.queue = a.queue[1:]
-			return a.playTrack(&next)
+		// Auto-advance to next track
+		if a.trackPos < len(a.tracklist)-1 {
+			return a.playPos(a.trackPos + 1)
 		}
 		a.nowPlaying.track = nil
 		a.nowPlaying.paused = false
@@ -367,7 +532,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.err = msg.err
 			return a, nil
 		}
-		a.queue = append(a.queue, msg.tracks...)
+		a = a.withQueueAddAll(msg.tracks)
 		return a, nil
 
 	case errMsg:
@@ -380,66 +545,152 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return a, cmd
 }
 
+func (a App) dlCheck() func(types.Track) bool {
+	if a.dl == nil {
+		return func(types.Track) bool { return false }
+	}
+	return a.dl.IsDownloaded
+}
+
+func (a App) renderTabBar() string {
+	tabs := []struct {
+		label string
+		tab   viewTab
+	}{
+		{"1:Queue", tabQueue},
+		{"2:Liked", tabLiked},
+		{"3:Downloads", tabDownloads},
+	}
+
+	var parts []string
+	for _, t := range tabs {
+		label := t.label
+		if t.tab == tabQueue && len(a.tracklist) > 0 {
+			label = fmt.Sprintf("1:Queue(%d)", len(a.tracklist))
+		}
+		if t.tab == tabLiked && len(a.likes.Tracks) > 0 {
+			label = fmt.Sprintf("2:Liked(%d)", len(a.likes.Tracks))
+		}
+		if t.tab == a.activeTab {
+			parts = append(parts, selectedStyle.Render(" "+label+" "))
+		} else {
+			parts = append(parts, dimStyle.Render(" "+label+" "))
+		}
+	}
+	return "  " + strings.Join(parts, dimStyle.Render("│"))
+}
+
+func (a App) renderQueueView() string {
+	if len(a.tracklist) == 0 {
+		return dimStyle.Render("  Queue is empty. Press 'a' on a track to add it.")
+	}
+
+	tc := computeTrackCols(a.width)
+	s := trackHeader(tc) + "\n"
+	for i, t := range a.tracklist {
+		isPlaying := i == a.trackPos
+		isCursor := i == a.queueCursor
+		played := a.trackPos >= 0 && i < a.trackPos
+
+		duration := fmt.Sprintf("%d:%02d", t.Duration/60, t.Duration%60)
+		num := fmt.Sprintf("%d", i+1)
+		icons := statusIcons(a.likes.IsLiked(t.ID), a.dl != nil && a.dl.IsDownloaded(t))
+
+		// Determine styles based on state
+		var numSt, artSt, albSt, titSt, durSt lipgloss.Style
+		var marker string
+
+		switch {
+		case isCursor && isPlaying:
+			marker = titleStyle.Render("▸")
+			numSt, artSt, albSt, titSt, durSt = playingSelectedStyle, playingSelectedStyle, playingSelectedStyle, playingSelectedStyle, playingSelectedStyle
+		case isPlaying:
+			marker = playingStyle.Render("♫")
+			numSt, artSt, albSt, titSt, durSt = playingStyle, playingStyle, playingStyle, playingStyle, playingStyle
+		case isCursor:
+			marker = titleStyle.Render("▸")
+			numSt, artSt, albSt, titSt, durSt = selectedStyle, selectedStyle, selectedStyle, selectedStyle, selectedStyle
+		case played:
+			marker = " "
+			numSt, artSt, albSt, titSt, durSt = dimStyle, dimStyle, dimStyle, dimStyle, dimStyle
+		default:
+			marker = " "
+			numSt, artSt, albSt, titSt, durSt = dimStyle, artistStyle, dimStyle, normalStyle, dimStyle
+		}
+
+		year := trackYear(t)
+
+		s += marker + icons +
+			col(num, colNum, numSt) +
+			col(t.Artist.Name, tc.artist, artSt) +
+			col(t.Title, tc.title, titSt) +
+			col(t.Album.Title, tc.album, albSt) +
+			col(year, colYear, durSt) +
+			col(duration, colDuration, durSt) + "\n"
+	}
+	s += "\n" + dimStyle.Render("  enter play  x remove  / search")
+	return s
+}
+
+func (a App) renderLikedView() string {
+	if len(a.likes.Tracks) == 0 {
+		return dimStyle.Render("  No liked tracks yet. Press 'l' on a track to like it.")
+	}
+
+	tc := computeTrackCols(a.width)
+	s := trackHeader(tc) + "\n"
+	for i, t := range a.likes.Tracks {
+		s += trackRow(i, t, i == a.likedCursor, true, a.dl != nil && a.dl.IsDownloaded(t), tc) + "\n"
+	}
+	s += "\n" + dimStyle.Render("  enter play  a queue  l unlike")
+	return s
+}
+
+func (a App) renderDownloadsView() string {
+	if a.dl == nil {
+		return dimStyle.Render("  Downloads not available.")
+	}
+
+	st := a.dl.Status()
+	if st.Active == 0 && st.Completed == 0 && st.Failed == 0 && st.Queued == 0 {
+		return dimStyle.Render("  No downloads yet. Press 'd' on a track or 'D' on an album.")
+	}
+
+	s := ""
+	if st.Active > 0 {
+		s += titleStyle.Render("  Downloading") + "\n"
+		if st.Current != "" {
+			s += "  " + normalStyle.Render(st.Current) + "\n"
+		}
+		s += "\n"
+	}
+	if st.Queued > 0 {
+		s += dimStyle.Render(fmt.Sprintf("  Waiting: %d", st.Queued)) + "\n"
+	}
+	if st.Completed > 0 {
+		s += dimStyle.Render(fmt.Sprintf("  Completed: %d", st.Completed)) + "\n"
+	}
+	if st.Failed > 0 {
+		s += lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000")).
+			Render(fmt.Sprintf("  Failed: %d", st.Failed)) + "\n"
+	}
+
+	return s
+}
+
 func (a App) View() string {
 	header := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(lipgloss.Color("#FF6AC1")).
-		Render("♫ spofree-cli")
+		Render("♫ riff")
 
-	search := a.search.View(a.width, a.likes.IsLiked)
 	a.nowPlaying.quality = qualities[a.quality]
 	a.nowPlaying.volume = a.volume
 	if a.nowPlaying.track != nil {
 		a.nowPlaying.liked = a.likes.IsLiked(a.nowPlaying.track.ID)
 	}
 	np := a.nowPlaying.View(a.width)
-
-	queueView := ""
-	if len(a.queue) > 0 {
-		label := "track"
-		if len(a.queue) != 1 {
-			label = "tracks"
-		}
-		queueView = "\n" + dimStyle.Render(fmt.Sprintf("  Queue: %d %s", len(a.queue), label)) + "\n"
-		limit := len(a.queue)
-		if limit > 5 {
-			limit = 5
-		}
-		tc := computeTrackCols(a.width)
-		for i, t := range a.queue[:limit] {
-			dur := fmt.Sprintf("%d:%02d", t.Duration/60, t.Duration%60)
-			queueView += "    " +
-				col(fmt.Sprintf("%d", i+1), colNum, dimStyle) +
-				col(t.Artist.Name, tc.artist, dimStyle) +
-				col(t.Title, tc.title, dimStyle) +
-				col(dur, colDuration, dimStyle) + "\n"
-		}
-		if len(a.queue) > 5 {
-			queueView += dimStyle.Render(fmt.Sprintf("    ... and %d more", len(a.queue)-5)) + "\n"
-		}
-	}
-
-	dlView := ""
-	if a.dl != nil {
-		st := a.dl.Status()
-		if st.Active > 0 || st.Completed > 0 || st.Failed > 0 {
-			parts := []string{}
-			if st.Active > 0 {
-				parts = append(parts, fmt.Sprintf("downloading %d", st.Active))
-			}
-			if st.Completed > 0 {
-				parts = append(parts, fmt.Sprintf("done %d", st.Completed))
-			}
-			if st.Failed > 0 {
-				parts = append(parts, fmt.Sprintf("failed %d", st.Failed))
-			}
-			dlLine := "  DL: " + strings.Join(parts, " · ")
-			if st.Current != "" && st.Active > 0 {
-				dlLine += "  " + st.Current
-			}
-			dlView = "\n" + dimStyle.Render(dlLine)
-		}
-	}
+	tabBar := a.renderTabBar()
 
 	errView := ""
 	if a.err != nil {
@@ -448,6 +699,10 @@ func (a App) View() string {
 			Render(fmt.Sprintf("  Error: %s", a.err))
 	}
 
+	help := dimStyle.Render("  ? help  / search  enter play  a queue  p prev  n next  space pause  s stop  q quit")
+
+	var top, bottom string
+
 	if a.showHelp {
 		helpOverlay := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
@@ -455,8 +710,9 @@ func (a App) View() string {
 			Padding(1, 2).
 			Render(
 				titleStyle.Render("Keybindings") + "\n\n" +
+					helpLine("1-4", "Switch tabs") +
 					helpLine("/", "Focus search") +
-					helpLine("tab", "Toggle track/album search") +
+					helpLine("tab", "Toggle track/album/artist search") +
 					helpLine("enter", "Play track / browse album") +
 					helpLine("esc", "Blur search / close help") +
 					helpLine("backspace", "Back from album tracklist") +
@@ -467,6 +723,7 @@ func (a App) View() string {
 					helpLine("p", "Previous track") +
 					helpLine("a", "Queue track / queue album") +
 					helpLine("A", "Queue all album tracks") +
+					helpLine("x", "Remove from queue") +
 					helpLine("left/right", "Seek -5s / +5s") +
 					helpLine("+/-", "Volume up/down") +
 					"\n" +
@@ -479,13 +736,59 @@ func (a App) View() string {
 					helpLine("?", "Toggle this help") +
 					helpLine("q", "Quit"),
 			)
-
-		return fmt.Sprintf("\n  %s\n\n%s\n%s\n", header, helpOverlay, np)
+		top = fmt.Sprintf("\n  %s\n%s\n\n%s\n%s", header, tabBar, helpOverlay, dimStyle.Render("  esc to close"))
+	} else if a.searchOpen {
+		searchOverlay := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#FF6AC1")).
+			Padding(1, 2).
+			Width(a.width - 6).
+			Render(a.search.View(a.width-12, a.likes.IsLiked, a.dlCheck()))
+		top = fmt.Sprintf("\n  %s\n%s\n\n%s\n%s%s", header, tabBar, searchOverlay, dimStyle.Render("  esc to close"), errView)
+	} else {
+		var content string
+		switch a.activeTab {
+		case tabQueue:
+			content = a.renderQueueView()
+		case tabLiked:
+			content = a.renderLikedView()
+		case tabDownloads:
+			content = a.renderDownloadsView()
+		}
+		top = fmt.Sprintf("\n  %s\n%s\n\n%s%s", header, tabBar, content, errView)
 	}
 
-	help := dimStyle.Render("  ? help  / search  enter play  a queue  p prev  n next  space pause  s stop  q quit")
+	dlStatus := ""
+	if a.dl != nil {
+		st := a.dl.Status()
+		if st.Active > 0 || st.Queued > 0 {
+			dlStatus = dimStyle.Render(fmt.Sprintf("  DL: %d active, %d queued, %d done", st.Active, st.Queued, st.Completed))
+			if st.Current != "" {
+				dlStatus += dimStyle.Render("  "+st.Current)
+			}
+			dlStatus += "\n"
+		} else if st.Completed > 0 || st.Failed > 0 {
+			parts := []string{}
+			if st.Completed > 0 {
+				parts = append(parts, fmt.Sprintf("%d done", st.Completed))
+			}
+			if st.Failed > 0 {
+				parts = append(parts, fmt.Sprintf("%d failed", st.Failed))
+			}
+			dlStatus = dimStyle.Render("  DL: "+strings.Join(parts, ", ")) + "\n"
+		}
+	}
 
-	return fmt.Sprintf("\n  %s\n\n%s%s%s%s\n%s\n%s\n", header, search, queueView, dlView, errView, np, help)
+	bottom = dlStatus + np + "\n" + help
+
+	topHeight := lipgloss.Height(top)
+	bottomHeight := lipgloss.Height(bottom)
+	gap := a.height - topHeight - bottomHeight
+	if gap < 1 {
+		gap = 1
+	}
+
+	return top + strings.Repeat("\n", gap) + bottom
 }
 
 func helpLine(key, desc string) string {

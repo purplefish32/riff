@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-const socketPath = "/tmp/spofree-mpv.sock"
+const socketPath = "/tmp/riff-mpv.sock"
 
 type Player struct {
 	cmd       *exec.Cmd

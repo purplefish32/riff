@@ -1,4 +1,4 @@
-# spofree-cli — Tidal TUI Player
+# riff — Tidal TUI Player
 
 ## Overview
 
@@ -7,7 +7,7 @@ A Bubble Tea TUI that streams Tidal music via the public SpoFree/hifi-api, playe
 ## Architecture
 
 ```
-spofree-cli/
+riff/
 ├── main.go                 # Entry point, Bubble Tea program setup
 ├── internal/
 │   ├── api/
@@ -63,7 +63,7 @@ spofree-cli/
 
 - [ ] **1.1 Types** — Define Track, Album, Artist, SearchResult structs matching API responses
 - [ ] **1.2 API Client** — HTTP client with search and track manifest resolution (base64 decode)
-- [ ] **1.3 mpv Player** — Spawn mpv subprocess with `--no-video --input-ipc-server=/tmp/spofree-mpv.sock`, control via JSON IPC (play, pause, stop, seek)
+- [ ] **1.3 mpv Player** — Spawn mpv subprocess with `--no-video --input-ipc-server=/tmp/riff-mpv.sock`, control via JSON IPC (play, pause, stop, seek)
 - [ ] **1.4 Search View** — Text input (bubbles) + results list, enter to play
 - [ ] **1.5 Now Playing Bar** — Bottom bar showing current track, artist, play/pause state
 - [ ] **1.6 Wire It Up** — Root model connecting search → API → player → now playing

@@ -23,7 +23,8 @@ var (
 				Bold(true)
 
 	selectedStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FF6AC1")).
+			Foreground(lipgloss.Color("#FFFFFF")).
+			Background(lipgloss.Color("#44475A")).
 			Bold(true)
 
 	normalStyle = lipgloss.NewStyle().
@@ -33,4 +34,13 @@ var (
 			Foreground(lipgloss.Color("#888888")).
 			Bold(true).
 			Underline(true)
+
+	playingStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#FF6AC1")).
+			Bold(true)
+
+	playingSelectedStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#FF6AC1")).
+				Background(lipgloss.Color("#44475A")).
+				Bold(true)
 )

@@ -5,7 +5,8 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/purplefish32/spofree-cli/internal/types"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/purplefish32/riff/internal/types"
 )
 
 type searchMode int
@@ -54,7 +55,6 @@ func newSearchModel() searchModel {
 	ti := textinput.New()
 	ti.Placeholder = "Search tracks..."
 	ti.Prompt = "🔍 "
-	ti.Focus()
 	ti.CharLimit = 100
 	ti.Width = 40
 
@@ -160,16 +160,16 @@ type trackCols struct {
 }
 
 func computeTrackCols(width int) trackCols {
-	fixed := colLike + colNum + colDuration + 4 // padding
+	fixed := colLike + colNum + colYear + colDuration + 4 // padding
 	avail := width - fixed
 	if avail < 30 {
 		avail = 30
 	}
-	// 30% artist, 30% album, 40% title
+	// 30% artist, 40% title, 30% album
 	return trackCols{
 		artist: avail * 30 / 100,
-		album:  avail * 30 / 100,
 		title:  avail * 40 / 100,
+		album:  avail * 30 / 100,
 	}
 }
 
@@ -193,37 +193,53 @@ func trackHeader(tc trackCols) string {
 	return "  " +
 		col("#", colNum, headerStyle) +
 		col("Artist", tc.artist, headerStyle) +
-		col("Album", tc.album, headerStyle) +
 		col("Title", tc.title, headerStyle) +
+		col("Album", tc.album, headerStyle) +
+		col("Year", colYear, headerStyle) +
 		col("Time", colDuration, headerStyle)
 }
 
-func likeIcon(liked bool) string {
+func statusIcons(liked bool, downloaded bool) string {
+	l := " "
 	if liked {
-		return selectedStyle.Render("♥")
+		l = titleStyle.Render("♥")
 	}
-	return " "
+	d := " "
+	if downloaded {
+		d = lipgloss.NewStyle().Foreground(lipgloss.Color("#50FA7B")).Render("↓")
+	}
+	return l + d
 }
 
-func trackRow(i int, track types.Track, selected bool, liked bool, tc trackCols) string {
+func trackYear(track types.Track) string {
+	if len(track.Album.ReleaseDate) >= 4 {
+		return track.Album.ReleaseDate[:4]
+	}
+	return ""
+}
+
+func trackRow(i int, track types.Track, selected bool, liked bool, downloaded bool, tc trackCols) string {
 	duration := fmt.Sprintf("%d:%02d", track.Duration/60, track.Duration%60)
 	num := fmt.Sprintf("%d", i+1)
-	heart := likeIcon(liked)
+	year := trackYear(track)
+	icons := statusIcons(liked, downloaded)
 
 	if selected {
-		return selectedStyle.Render("▸") + heart +
+		return titleStyle.Render("▸") + icons +
 			col(num, colNum, selectedStyle) +
 			col(track.Artist.Name, tc.artist, selectedStyle) +
-			col(track.Album.Title, tc.album, selectedStyle) +
 			col(track.Title, tc.title, selectedStyle) +
+			col(track.Album.Title, tc.album, selectedStyle) +
+			col(year, colYear, selectedStyle) +
 			col(duration, colDuration, selectedStyle)
 	}
 
-	return " " + heart +
+	return " " + icons +
 		col(num, colNum, dimStyle) +
 		col(track.Artist.Name, tc.artist, artistStyle) +
-		col(track.Album.Title, tc.album, dimStyle) +
 		col(track.Title, tc.title, normalStyle) +
+		col(track.Album.Title, tc.album, dimStyle) +
+		col(year, colYear, dimStyle) +
 		col(duration, colDuration, dimStyle)
 }
 
@@ -247,7 +263,7 @@ func albumRow(i int, album types.AlbumFull, selected bool, ac albumCols) string 
 	tracks := fmt.Sprintf("%d", album.NumberOfTracks)
 
 	if selected {
-		return selectedStyle.Render("▸ ") +
+		return titleStyle.Render("▸ ") +
 			col(album.Title, ac.title, selectedStyle) +
 			col(artist, ac.artist, selectedStyle) +
 			col(year, colYear, selectedStyle) +
@@ -279,7 +295,7 @@ func artistRow(i int, artist types.ArtistFull, selected bool, width int) string 
 	num := fmt.Sprintf("%d", i+1)
 
 	if selected {
-		return selectedStyle.Render("▸ ") +
+		return titleStyle.Render("▸ ") +
 			col(num, colNum, selectedStyle) +
 			col(artist.Name, w, selectedStyle)
 	}
@@ -289,7 +305,7 @@ func artistRow(i int, artist types.ArtistFull, selected bool, width int) string 
 		col(artist.Name, w, artistStyle)
 }
 
-func (m searchModel) View(width int, isLiked func(int) bool) string {
+func (m searchModel) View(width int, isLiked func(int) bool, isDownloaded func(types.Track) bool) string {
 	modeLabels := map[searchMode]string{
 		modeTrack: "tracks", modeAlbum: "albums", modeArtist: "artists",
 		modeBrowseAlbum: "albums",
@@ -316,7 +332,7 @@ func (m searchModel) View(width int, isLiked func(int) bool) string {
 		s += dimStyle.Render("  (backspace to go back)") + "\n\n"
 		s += trackHeader(tc) + "\n"
 		for i, track := range m.albumTracks {
-			s += trackRow(i, track, i == m.cursor, isLiked(track.ID), tc) + "\n"
+			s += trackRow(i, track, i == m.cursor, isLiked(track.ID), isDownloaded(track), tc) + "\n"
 		}
 	case modeArtist:
 		if len(m.artists) > 0 {
@@ -336,7 +352,7 @@ func (m searchModel) View(width int, isLiked func(int) bool) string {
 		if len(m.results) > 0 {
 			s += trackHeader(tc) + "\n"
 			for i, track := range m.results {
-				s += trackRow(i, track, i == m.cursor, isLiked(track.ID), tc) + "\n"
+				s += trackRow(i, track, i == m.cursor, isLiked(track.ID), isDownloaded(track), tc) + "\n"
 			}
 		}
 	}

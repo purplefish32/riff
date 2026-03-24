@@ -10,8 +10,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/purplefish32/spofree-cli/internal/api"
-	"github.com/purplefish32/spofree-cli/internal/types"
+	"github.com/purplefish32/riff/internal/api"
+	"github.com/purplefish32/riff/internal/types"
 )
 
 const maxConcurrent = 3
@@ -38,7 +38,7 @@ func New(client *api.Client, quality string, onUpdate func()) *Downloader {
 	home, _ := os.UserHomeDir()
 	return &Downloader{
 		client:   client,
-		baseDir:  filepath.Join(home, "Music", "spofree-cli"),
+		baseDir:  filepath.Join(home, "Music", "riff"),
 		quality:  quality,
 		onUpdate: onUpdate,
 		sem:      make(chan struct{}, maxConcurrent),
@@ -105,6 +105,12 @@ func (d *Downloader) trackPath(track types.Track) string {
 
 	filename := fmt.Sprintf("%02d - %s.%s", track.TrackNumber, title, ext)
 	return filepath.Join(d.baseDir, artist, album, filename)
+}
+
+func (d *Downloader) IsDownloaded(track types.Track) bool {
+	path := d.trackPath(track)
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func (d *Downloader) downloadTrack(track types.Track) {

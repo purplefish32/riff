@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/purplefish32/spofree-cli/internal/types"
+	"github.com/purplefish32/riff/internal/types"
 )
 
 type LikedStore struct {
@@ -20,7 +20,7 @@ func NewLikedStore() (*LikedStore, error) {
 		return nil, err
 	}
 
-	dir := filepath.Join(configDir, "spofree-cli")
+	dir := filepath.Join(configDir, "riff")
 	os.MkdirAll(dir, 0o755)
 
 	s := &LikedStore{

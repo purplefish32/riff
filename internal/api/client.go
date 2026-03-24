@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/purplefish32/spofree-cli/internal/types"
+	"github.com/purplefish32/riff/internal/types"
 )
 
 var instances = []string{
@@ -144,7 +144,11 @@ func (c *Client) GetAlbumTracks(albumID int) ([]types.Track, error) {
 	var tracks []types.Track
 	for _, item := range result.Data.Items {
 		if item.Type == "track" {
-			tracks = append(tracks, item.Item)
+			t := item.Item
+			if t.Album.ReleaseDate == "" {
+				t.Album.ReleaseDate = result.Data.ReleaseDate
+			}
+			tracks = append(tracks, t)
 		}
 	}
 

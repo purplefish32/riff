@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/purplefish32/spofree-cli/internal/types"
+	"github.com/purplefish32/riff/internal/types"
 )
 
 type nowPlayingModel struct {
@@ -40,7 +40,7 @@ func (m nowPlayingModel) View(width int) string {
 
 	heart := ""
 	if m.liked {
-		heart = "  " + selectedStyle.Render("♥")
+		heart = "  " + titleStyle.Render("♥")
 	}
 
 	vol := dimStyle.Render(fmt.Sprintf("  vol:%d%%", m.volume))
@@ -77,7 +77,7 @@ func (m nowPlayingModel) View(width int) string {
 
 	bar := fmt.Sprintf("  %s %s%s %s",
 		dimStyle.Render(formatTime(m.position)),
-		selectedStyle.Render(strings.Repeat("━", filled)),
+		titleStyle.Render(strings.Repeat("━", filled)),
 		dimStyle.Render(strings.Repeat("─", empty)),
 		dimStyle.Render(formatTime(m.duration)),
 	)
