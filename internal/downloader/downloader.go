@@ -22,6 +22,7 @@ type Status struct {
 	Failed    int
 	Queued    int
 	Current   string
+	LastError string
 }
 
 type Downloader struct {
@@ -61,6 +62,12 @@ func (d *Downloader) SetQuality(q string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.quality = q
+}
+
+func (d *Downloader) SetOnUpdate(fn func()) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.onUpdate = fn
 }
 
 func (d *Downloader) QueueTrack(track types.Track) {
@@ -146,6 +153,7 @@ func (d *Downloader) downloadTrack(track types.Track) {
 		d.mu.Lock()
 		d.status.Active--
 		d.status.Failed++
+		d.status.LastError = fmt.Sprintf("%s: %s", track.Title, err)
 		d.mu.Unlock()
 		d.notify()
 		return
@@ -155,6 +163,7 @@ func (d *Downloader) downloadTrack(track types.Track) {
 		d.mu.Lock()
 		d.status.Active--
 		d.status.Failed++
+		d.status.LastError = fmt.Sprintf("%s: %s", track.Title, err)
 		d.mu.Unlock()
 		d.notify()
 		return

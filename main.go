@@ -62,6 +62,10 @@ func main() {
 	app := ui.NewApp(client, p, likes, dl, cfg, qs)
 	prog := tea.NewProgram(app, tea.WithAltScreen())
 
+	dl.SetOnUpdate(func() {
+		prog.Send(ui.DownloadUpdateMsg{})
+	})
+
 	if _, err := prog.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
