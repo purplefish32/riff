@@ -271,8 +271,14 @@ func (a App) updateSearchInput(msg tea.KeyMsg) (App, tea.Cmd) {
 		if a.search.input.Value() == "" {
 			return a, nil
 		}
-		a.search.loading = true
 		query := a.search.input.Value()
+		// Skip API call if query and mode are unchanged
+		if query == a.search.lastQuery && a.search.mode == a.search.lastMode {
+			return a, nil
+		}
+		a.search.loading = true
+		a.search.lastQuery = query
+		a.search.lastMode = a.search.mode
 		switch a.search.mode {
 		case modeAlbum:
 			return a, func() tea.Msg {
@@ -415,8 +421,13 @@ func (a App) updateSearchBrowse(msg tea.KeyMsg) (App, tea.Cmd) {
 		if a.dl != nil {
 			a.dl.SetQuality(qualities[a.quality])
 			if target := a.targetTrackOrNowPlaying(); target != nil {
-				a.dl.QueueTrack(*target)
-				a = a.withStatus(fmt.Sprintf("Downloading: %s", target.Title))
+				if a.dl.IsDownloaded(*target) {
+					a = a.withStatus(fmt.Sprintf("Already downloaded: %s", target.Title))
+				} else if a.dl.QueueTrack(*target) {
+					a = a.withStatus(fmt.Sprintf("Downloading: %s", target.Title))
+				} else {
+					a = a.withStatus(fmt.Sprintf("Already queued: %s", target.Title))
+				}
 			}
 		}
 		return a, nil
@@ -597,8 +608,13 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 		if a.dl != nil {
 			a.dl.SetQuality(qualities[a.quality])
 			if target := a.targetTrackOrNowPlaying(); target != nil {
-				a.dl.QueueTrack(*target)
-				a = a.withStatus(fmt.Sprintf("Downloading: %s", target.Title))
+				if a.dl.IsDownloaded(*target) {
+					a = a.withStatus(fmt.Sprintf("Already downloaded: %s", target.Title))
+				} else if a.dl.QueueTrack(*target) {
+					a = a.withStatus(fmt.Sprintf("Downloading: %s", target.Title))
+				} else {
+					a = a.withStatus(fmt.Sprintf("Already queued: %s", target.Title))
+				}
 			}
 		}
 		return a, nil

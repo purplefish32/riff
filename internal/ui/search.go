@@ -27,6 +27,8 @@ type searchModel struct {
 	albumTitle  string
 	cursor      int
 	loading     bool
+	lastQuery   string
+	lastMode    searchMode
 }
 
 type searchResultMsg struct {
