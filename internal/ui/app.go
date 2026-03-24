@@ -45,34 +45,48 @@ const (
 	tabDownloads
 )
 
+// inputMode represents the current UI state. Every key event is routed
+// through exactly one mode handler, eliminating boolean-soup guards.
+type inputMode int
+
+const (
+	modeNormal       inputMode = iota // browsing tabs
+	modeSearchInput                   // typing in search box
+	modeSearchBrowse                  // navigating search results
+	modeHelp                          // help overlay
+)
+
 type App struct {
+	mode        inputMode
 	activeTab   viewTab
-	searchOpen  bool
 	search      searchModel
 	nowPlaying  nowPlayingModel
 	tracklist   []types.Track
 	trackPos    int // index of currently playing track, -1 if none
 	likedCursor int
 	queueCursor int // cursor for browsing the queue view
-	client     *api.Client
-	player     *player.Player
-	likes      *persistence.LikedStore
-	dl         *downloader.Downloader
-	config     *persistence.Config
-	queueStore *persistence.QueueStore
-	playGen    int
-	quality    int
-	volume     int
-	showHelp   bool
-	width      int
-	height     int
-	err        error
+	client      *api.Client
+	player      *player.Player
+	likes       *persistence.LikedStore
+	dl          *downloader.Downloader
+	config      *persistence.Config
+	queueStore  *persistence.QueueStore
+	playGen     int
+	quality     int
+	volume      int
+	width       int
+	height      int
+	err         error
 }
 
 func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedStore, dl *downloader.Downloader, cfg *persistence.Config, qs *persistence.QueueStore) App {
+	mode := modeNormal
+	if len(qs.Tracks) == 0 {
+		mode = modeSearchInput
+	}
 	return App{
+		mode:       mode,
 		search:     newSearchModel(),
-		searchOpen: len(qs.Tracks) == 0,
 		client:     client,
 		player:     player,
 		likes:      likes,
@@ -93,7 +107,7 @@ func tick() tea.Cmd {
 }
 
 func (a App) Init() tea.Cmd {
-	if a.searchOpen {
+	if a.mode == modeSearchInput {
 		return tea.Batch(a.search.input.Focus(), tick())
 	}
 	return tick()
@@ -127,9 +141,7 @@ func (a App) playPos(pos int) (App, tea.Cmd) {
 	}
 }
 
-// addAndPlay appends a track to the tracklist and plays it.
 func (a App) addAndPlay(track *types.Track) (App, tea.Cmd) {
-	// Insert after current position
 	insertPos := a.trackPos + 1
 	if insertPos > len(a.tracklist) {
 		insertPos = len(a.tracklist)
@@ -166,6 +178,400 @@ func (a App) withQueueAddAll(tracks []types.Track) App {
 	return a
 }
 
+// targetTrack returns the track under focus based on current mode and tab.
+func (a App) targetTrack() *types.Track {
+	switch a.mode {
+	case modeSearchBrowse:
+		return a.search.selectedTrack()
+	case modeNormal:
+		switch a.activeTab {
+		case tabQueue:
+			if len(a.tracklist) > 0 {
+				return &a.tracklist[a.queueCursor]
+			}
+		case tabLiked:
+			if len(a.likes.Tracks) > 0 {
+				return &a.likes.Tracks[a.likedCursor]
+			}
+		}
+	}
+	return nil
+}
+
+// targetTrackOrNowPlaying returns targetTrack, falling back to now playing.
+func (a App) targetTrackOrNowPlaying() *types.Track {
+	if t := a.targetTrack(); t != nil {
+		return t
+	}
+	return a.nowPlaying.track
+}
+
+func (a App) stopPlayback() App {
+	a.playGen++
+	a.player.Stop()
+	a.nowPlaying.track = nil
+	a.nowPlaying.paused = false
+	a.nowPlaying.position = 0
+	a.nowPlaying.duration = 0
+	return a
+}
+
+func (a App) adjustVolume(delta int) App {
+	a.volume += delta
+	if a.volume < 0 {
+		a.volume = 0
+	}
+	if a.volume > 150 {
+		a.volume = 150
+	}
+	a.player.SetVolume(a.volume)
+	a.config.Volume = a.volume
+	a.config.Save()
+	return a
+}
+
+// --- Mode handlers ---
+
+func (a App) updateHelp(msg tea.KeyMsg) (App, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "?":
+		a.mode = modeNormal
+	}
+	return a, nil
+}
+
+func (a App) updateSearchInput(msg tea.KeyMsg) (App, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c":
+		return a, tea.Quit
+	case "esc":
+		a.search.input.Blur()
+		a.mode = modeNormal
+		return a, nil
+	case "enter":
+		if a.search.input.Value() == "" {
+			return a, nil
+		}
+		a.search.loading = true
+		query := a.search.input.Value()
+		switch a.search.mode {
+		case modeAlbum:
+			return a, func() tea.Msg {
+				albums, err := a.client.SearchAlbums(query)
+				return albumSearchResultMsg{albums: albums, err: err}
+			}
+		case modeArtist:
+			return a, func() tea.Msg {
+				artists, err := a.client.SearchArtists(query)
+				return artistSearchResultMsg{artists: artists, err: err}
+			}
+		default:
+			return a, func() tea.Msg {
+				tracks, err := a.client.SearchTracks(query)
+				return searchResultMsg{tracks: tracks, err: err}
+			}
+		}
+	}
+	// Delegate to search model for text input, tab switching
+	var cmd tea.Cmd
+	a.search, cmd = a.search.Update(msg)
+	return a, cmd
+}
+
+func (a App) updateSearchBrowse(msg tea.KeyMsg) (App, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c", "q":
+		return a, tea.Quit
+	case "esc":
+		a.search.input.Blur()
+		a.mode = modeNormal
+		return a, nil
+	case "/":
+		a.mode = modeSearchInput
+		a.search.input.Focus()
+		return a, nil
+	case "1":
+		a.activeTab = tabQueue
+		a.mode = modeNormal
+		return a, nil
+	case "2":
+		a.activeTab = tabLiked
+		a.mode = modeNormal
+		return a, nil
+	case "3":
+		a.activeTab = tabDownloads
+		a.mode = modeNormal
+		return a, nil
+	case "?":
+		a.mode = modeHelp
+		return a, nil
+	case "enter":
+		if a.search.mode == modeArtist {
+			if artist := a.search.selectedArtist(); artist != nil {
+				a.search.loading = true
+				name := artist.Name
+				return a, func() tea.Msg {
+					albums, err := a.client.SearchAlbums(name)
+					return albumSearchResultMsg{albums: albums, err: err}
+				}
+			}
+		}
+		if a.search.mode == modeAlbum {
+			if album := a.search.selectedAlbum(); album != nil {
+				a.search.loading = true
+				albumID := album.ID
+				albumTitle := album.Title
+				return a, func() tea.Msg {
+					tracks, err := a.client.GetAlbumTracks(albumID)
+					return albumTracksMsg{tracks: tracks, title: albumTitle, err: err}
+				}
+			}
+		}
+		if track := a.search.selectedTrack(); track != nil {
+			return a.addAndPlay(track)
+		}
+		return a, nil
+	case "a":
+		if a.search.mode == modeAlbum {
+			if album := a.search.selectedAlbum(); album != nil {
+				albumID := album.ID
+				return a, func() tea.Msg {
+					tracks, err := a.client.GetAlbumTracks(albumID)
+					return queueAlbumMsg{tracks: tracks, err: err}
+				}
+			}
+		}
+		if track := a.search.selectedTrack(); track != nil {
+			a = a.withQueueAdd(*track)
+		}
+		return a, nil
+	case "A":
+		if tracks := a.search.browsingAlbumTracks(); len(tracks) > 0 {
+			a = a.withQueueAddAll(tracks)
+		}
+		return a, nil
+	case "u":
+		if track := a.search.selectedTrack(); track != nil {
+			openBrowser(fmt.Sprintf("https://monochrome.tf/album/%d", track.Album.ID))
+		}
+		return a, nil
+	case " ":
+		if a.nowPlaying.track != nil {
+			a.nowPlaying.paused = !a.nowPlaying.paused
+			a.player.TogglePause()
+		}
+		return a, nil
+	case "s":
+		if a.nowPlaying.track != nil {
+			a = a.stopPlayback()
+		}
+		return a, nil
+	case "n":
+		if a.trackPos < len(a.tracklist)-1 {
+			return a.playPos(a.trackPos + 1)
+		}
+		return a, nil
+	case "p":
+		if a.trackPos > 0 {
+			return a.playPos(a.trackPos - 1)
+		}
+		return a, nil
+	case "left":
+		if a.nowPlaying.track != nil {
+			a.player.Seek(-5)
+		}
+		return a, nil
+	case "right":
+		if a.nowPlaying.track != nil {
+			a.player.Seek(5)
+		}
+		return a, nil
+	case "+", "=":
+		a = a.adjustVolume(5)
+		return a, nil
+	case "-":
+		a = a.adjustVolume(-5)
+		return a, nil
+	case "d":
+		if a.dl != nil {
+			a.dl.SetQuality(qualities[a.quality])
+			if target := a.targetTrackOrNowPlaying(); target != nil {
+				a.dl.QueueTrack(*target)
+			}
+		}
+		return a, nil
+	case "D":
+		if a.dl != nil {
+			a.dl.SetQuality(qualities[a.quality])
+			if tracks := a.search.browsingAlbumTracks(); len(tracks) > 0 {
+				a.dl.QueueAlbum(tracks)
+			}
+		}
+		return a, nil
+	case "l":
+		if target := a.targetTrackOrNowPlaying(); target != nil {
+			a.likes.Toggle(*target)
+		}
+		return a, nil
+	case "Q":
+		a.quality = (a.quality + 1) % len(qualities)
+		a.config.Quality = qualities[a.quality]
+		a.config.Save()
+		return a, nil
+	}
+	// Delegate j/k/up/down/backspace to search model
+	var cmd tea.Cmd
+	a.search, cmd = a.search.Update(msg)
+	return a, cmd
+}
+
+func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c", "q":
+		return a, tea.Quit
+	case "/":
+		a.mode = modeSearchInput
+		a.search.input.Focus()
+		return a, nil
+	case "?":
+		a.mode = modeHelp
+		return a, nil
+	case "1":
+		a.activeTab = tabQueue
+		return a, nil
+	case "2":
+		a.activeTab = tabLiked
+		return a, nil
+	case "3":
+		a.activeTab = tabDownloads
+		return a, nil
+	case "up", "k":
+		if a.activeTab == tabQueue && a.queueCursor > 0 {
+			a.queueCursor--
+		}
+		if a.activeTab == tabLiked && a.likedCursor > 0 {
+			a.likedCursor--
+		}
+		return a, nil
+	case "down", "j":
+		if a.activeTab == tabQueue && a.queueCursor < len(a.tracklist)-1 {
+			a.queueCursor++
+		}
+		if a.activeTab == tabLiked && a.likedCursor < len(a.likes.Tracks)-1 {
+			a.likedCursor++
+		}
+		return a, nil
+	case "enter":
+		if a.activeTab == tabQueue && len(a.tracklist) > 0 {
+			return a.playPos(a.queueCursor)
+		}
+		if a.activeTab == tabLiked && len(a.likes.Tracks) > 0 {
+			track := a.likes.Tracks[a.likedCursor]
+			return a.addAndPlay(&track)
+		}
+		return a, nil
+	case "x":
+		if a.activeTab != tabQueue || len(a.tracklist) == 0 {
+			return a, nil
+		}
+		removingPlaying := a.queueCursor == a.trackPos
+		a.tracklist = append(a.tracklist[:a.queueCursor], a.tracklist[a.queueCursor+1:]...)
+
+		if removingPlaying {
+			a = a.stopPlayback()
+			if a.queueCursor >= len(a.tracklist) && a.queueCursor > 0 {
+				a.queueCursor--
+			}
+			if len(a.tracklist) > 0 {
+				pos := a.queueCursor
+				a.queueStore.Save(a.tracklist, pos)
+				return a.playPos(pos)
+			}
+			a.trackPos = -1
+		} else {
+			if a.queueCursor < a.trackPos {
+				a.trackPos--
+			}
+			if a.queueCursor >= len(a.tracklist) && a.queueCursor > 0 {
+				a.queueCursor--
+			}
+		}
+		a.queueStore.Save(a.tracklist, a.trackPos)
+		return a, nil
+	case "a":
+		if a.activeTab == tabLiked && len(a.likes.Tracks) > 0 {
+			a = a.withQueueAdd(a.likes.Tracks[a.likedCursor])
+		}
+		return a, nil
+	case " ":
+		if a.nowPlaying.track != nil {
+			a.nowPlaying.paused = !a.nowPlaying.paused
+			a.player.TogglePause()
+		}
+		return a, nil
+	case "s":
+		if a.nowPlaying.track != nil {
+			a = a.stopPlayback()
+		}
+		return a, nil
+	case "n":
+		if a.trackPos < len(a.tracklist)-1 {
+			return a.playPos(a.trackPos + 1)
+		}
+		return a, nil
+	case "p":
+		if a.trackPos > 0 {
+			return a.playPos(a.trackPos - 1)
+		}
+		return a, nil
+	case "left":
+		if a.nowPlaying.track != nil {
+			a.player.Seek(-5)
+		}
+		return a, nil
+	case "right":
+		if a.nowPlaying.track != nil {
+			a.player.Seek(5)
+		}
+		return a, nil
+	case "+", "=":
+		a = a.adjustVolume(5)
+		return a, nil
+	case "-":
+		a = a.adjustVolume(-5)
+		return a, nil
+	case "d":
+		if a.dl != nil {
+			a.dl.SetQuality(qualities[a.quality])
+			if target := a.targetTrackOrNowPlaying(); target != nil {
+				a.dl.QueueTrack(*target)
+			}
+		}
+		return a, nil
+	case "D":
+		if a.dl != nil {
+			a.dl.SetQuality(qualities[a.quality])
+			if tracks := a.search.browsingAlbumTracks(); len(tracks) > 0 {
+				a.dl.QueueAlbum(tracks)
+			}
+		}
+		return a, nil
+	case "l":
+		if target := a.targetTrackOrNowPlaying(); target != nil {
+			a.likes.Toggle(*target)
+		}
+		return a, nil
+	case "Q":
+		a.quality = (a.quality + 1) % len(qualities)
+		a.config.Quality = qualities[a.quality]
+		a.config.Save()
+		return a, nil
+	}
+	return a, nil
+}
+
+// --- Main Update dispatcher ---
+
 func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -184,327 +590,19 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, tick()
 
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+c", "q":
-			if !a.search.input.Focused() {
-				return a, tea.Quit
-			}
-		case "1":
-			if !a.search.input.Focused() {
-				a.activeTab = tabQueue
-				a.searchOpen = false
-				return a, nil
-			}
-		case "2":
-			if !a.search.input.Focused() {
-				a.activeTab = tabLiked
-				a.searchOpen = false
-				return a, nil
-			}
-		case "3":
-			if !a.search.input.Focused() {
-				a.activeTab = tabDownloads
-				a.searchOpen = false
-				return a, nil
-			}
-		case "up", "k":
-			if !a.searchOpen {
-				if a.activeTab == tabQueue {
-					if a.queueCursor > 0 {
-						a.queueCursor--
-					}
-					return a, nil
-				}
-				if a.activeTab == tabLiked {
-					if a.likedCursor > 0 {
-						a.likedCursor--
-					}
-					return a, nil
-				}
-			}
-		case "down", "j":
-			if !a.searchOpen {
-				if a.activeTab == tabQueue {
-					if a.queueCursor < len(a.tracklist)-1 {
-						a.queueCursor++
-					}
-					return a, nil
-				}
-				if a.activeTab == tabLiked {
-					if a.likedCursor < len(a.likes.Tracks)-1 {
-						a.likedCursor++
-					}
-					return a, nil
-				}
-			}
-		case "x":
-			if !a.searchOpen && !a.search.input.Focused() && a.activeTab == tabQueue && len(a.tracklist) > 0 {
-				removingPlaying := a.queueCursor == a.trackPos
-
-				a.tracklist = append(a.tracklist[:a.queueCursor], a.tracklist[a.queueCursor+1:]...)
-
-				if removingPlaying {
-					a.player.Stop()
-					a.nowPlaying.track = nil
-					a.nowPlaying.paused = false
-					a.nowPlaying.position = 0
-					a.nowPlaying.duration = 0
-					a.playGen++
-
-					if a.queueCursor >= len(a.tracklist) && a.queueCursor > 0 {
-						a.queueCursor--
-					}
-					// Auto-advance if there are tracks left
-					if len(a.tracklist) > 0 {
-						pos := a.queueCursor
-						a.queueStore.Save(a.tracklist, pos)
-						return a.playPos(pos)
-					}
-					a.trackPos = -1
-				} else {
-					if a.queueCursor < a.trackPos {
-						a.trackPos--
-					}
-					if a.queueCursor >= len(a.tracklist) && a.queueCursor > 0 {
-						a.queueCursor--
-					}
-				}
-				a.queueStore.Save(a.tracklist, a.trackPos)
-				return a, nil
-			}
-		case "enter":
-			// Tab views: only when search popup is closed
-			if !a.searchOpen {
-				if a.activeTab == tabQueue && len(a.tracklist) > 0 {
-					return a.playPos(a.queueCursor)
-				}
-				if a.activeTab == tabLiked && len(a.likes.Tracks) > 0 {
-					track := a.likes.Tracks[a.likedCursor]
-					return a.addAndPlay(&track)
-				}
-			}
-			if a.search.input.Focused() && a.search.input.Value() != "" {
-				a.search.loading = true
-				query := a.search.input.Value()
-				switch a.search.mode {
-				case modeAlbum:
-					return a, func() tea.Msg {
-						albums, err := a.client.SearchAlbums(query)
-						return albumSearchResultMsg{albums: albums, err: err}
-					}
-				case modeArtist:
-					return a, func() tea.Msg {
-						artists, err := a.client.SearchArtists(query)
-						return artistSearchResultMsg{artists: artists, err: err}
-					}
-				default:
-					return a, func() tea.Msg {
-						tracks, err := a.client.SearchTracks(query)
-						return searchResultMsg{tracks: tracks, err: err}
-					}
-				}
-			}
-			// Artist selected → search their albums
-			if a.search.mode == modeArtist {
-				if artist := a.search.selectedArtist(); artist != nil {
-					a.search.loading = true
-					name := artist.Name
-					return a, func() tea.Msg {
-						albums, err := a.client.SearchAlbums(name)
-						return albumSearchResultMsg{albums: albums, err: err}
-					}
-				}
-			}
-			if a.search.mode == modeAlbum {
-				if album := a.search.selectedAlbum(); album != nil {
-					a.search.loading = true
-					albumID := album.ID
-					albumTitle := album.Title
-					return a, func() tea.Msg {
-						tracks, err := a.client.GetAlbumTracks(albumID)
-						return albumTracksMsg{tracks: tracks, title: albumTitle, err: err}
-					}
-				}
-			}
-			if track := a.search.selectedTrack(); track != nil {
-				return a.addAndPlay(track)
-			}
-		case " ":
-			if !a.search.input.Focused() && a.nowPlaying.track != nil {
-				a.nowPlaying.paused = !a.nowPlaying.paused
-				a.player.TogglePause()
-				return a, nil
-			}
-		case "s":
-			if !a.search.input.Focused() && a.nowPlaying.track != nil {
-				a.playGen++
-				a.player.Stop()
-				a.nowPlaying.track = nil
-				a.nowPlaying.paused = false
-				a.nowPlaying.position = 0
-				a.nowPlaying.duration = 0
-				return a, nil
-			}
-		case "a":
-			if !a.search.input.Focused() {
-				// Liked tab: add liked track to tracklist
-				if a.activeTab == tabLiked && len(a.likes.Tracks) > 0 {
-					a = a.withQueueAdd(a.likes.Tracks[a.likedCursor])
-					return a, nil
-				}
-				// In album search mode: fetch and queue all album tracks
-				if a.search.mode == modeAlbum {
-					if album := a.search.selectedAlbum(); album != nil {
-						albumID := album.ID
-						return a, func() tea.Msg {
-							tracks, err := a.client.GetAlbumTracks(albumID)
-							return queueAlbumMsg{tracks: tracks, err: err}
-						}
-					}
-				}
-				if track := a.search.selectedTrack(); track != nil {
-					a = a.withQueueAdd(*track)
-				}
-				return a, nil
-			}
-		case "A":
-			if !a.search.input.Focused() {
-				if tracks := a.search.browsingAlbumTracks(); len(tracks) > 0 {
-					a = a.withQueueAddAll(tracks)
-				}
-				return a, nil
-			}
-		case "n":
-			if !a.search.input.Focused() {
-				if a.trackPos < len(a.tracklist)-1 {
-					return a.playPos(a.trackPos + 1)
-				}
-				return a, nil
-			}
-		case "p":
-			if !a.search.input.Focused() {
-				if a.trackPos > 0 {
-					return a.playPos(a.trackPos - 1)
-				}
-				return a, nil
-			}
-		case "left":
-			if !a.search.input.Focused() && a.nowPlaying.track != nil {
-				a.player.Seek(-5)
-				return a, nil
-			}
-		case "right":
-			if !a.search.input.Focused() && a.nowPlaying.track != nil {
-				a.player.Seek(5)
-				return a, nil
-			}
-		case "+", "=":
-			if !a.search.input.Focused() {
-				a.volume += 5
-				if a.volume > 150 {
-					a.volume = 150
-				}
-				a.player.SetVolume(a.volume)
-				a.config.Volume = a.volume
-				a.config.Save()
-				return a, nil
-			}
-		case "-":
-			if !a.search.input.Focused() {
-				a.volume -= 5
-				if a.volume < 0 {
-					a.volume = 0
-				}
-				a.player.SetVolume(a.volume)
-				a.config.Volume = a.volume
-				a.config.Save()
-				return a, nil
-			}
-		case "d":
-			if !a.search.input.Focused() && a.dl != nil {
-				a.dl.SetQuality(qualities[a.quality])
-				var target *types.Track
-				switch {
-				case a.searchOpen:
-					target = a.search.selectedTrack()
-				case a.activeTab == tabQueue && len(a.tracklist) > 0:
-					target = &a.tracklist[a.queueCursor]
-				case a.activeTab == tabLiked && len(a.likes.Tracks) > 0:
-					target = &a.likes.Tracks[a.likedCursor]
-				}
-				if target == nil && a.nowPlaying.track != nil {
-					target = a.nowPlaying.track
-				}
-				if target != nil {
-					a.dl.QueueTrack(*target)
-				}
-				return a, nil
-			}
-		case "D":
-			if !a.search.input.Focused() && a.dl != nil {
-				a.dl.SetQuality(qualities[a.quality])
-				if tracks := a.search.browsingAlbumTracks(); len(tracks) > 0 {
-					a.dl.QueueAlbum(tracks)
-				}
-				return a, nil
-			}
-		case "l":
-			if !a.search.input.Focused() {
-				var target *types.Track
-				switch {
-				case a.searchOpen:
-					target = a.search.selectedTrack()
-				case a.activeTab == tabQueue && len(a.tracklist) > 0:
-					target = &a.tracklist[a.queueCursor]
-				case a.activeTab == tabLiked && len(a.likes.Tracks) > 0:
-					target = &a.likes.Tracks[a.likedCursor]
-				}
-				if target == nil && a.nowPlaying.track != nil {
-					target = a.nowPlaying.track
-				}
-				if target != nil {
-					a.likes.Toggle(*target)
-				}
-				return a, nil
-			}
-		case "u":
-			if !a.search.input.Focused() {
-				if track := a.search.selectedTrack(); track != nil {
-					openBrowser(fmt.Sprintf("https://monochrome.tf/album/%d", track.Album.ID))
-				}
-				return a, nil
-			}
-		case "Q":
-			if !a.search.input.Focused() {
-				a.quality = (a.quality + 1) % len(qualities)
-				a.config.Quality = qualities[a.quality]
-				a.config.Save()
-				return a, nil
-			}
-		case "?":
-			if !a.search.input.Focused() {
-				a.showHelp = !a.showHelp
-				return a, nil
-			}
-		case "esc":
-			if a.showHelp {
-				a.showHelp = false
-				return a, nil
-			}
-			if a.searchOpen {
-				a.search.input.Blur()
-				a.searchOpen = false
-				return a, nil
-			}
-			a.search.input.Blur()
-			return a, nil
-		case "/":
-			if !a.search.input.Focused() {
-				a.searchOpen = true
-				a.showHelp = false
-				a.search.input.Focus()
-				return a, nil
-			}
+		switch a.mode {
+		case modeHelp:
+			a, cmd := a.updateHelp(msg)
+			return a, cmd
+		case modeSearchInput:
+			a, cmd := a.updateSearchInput(msg)
+			return a, cmd
+		case modeSearchBrowse:
+			a, cmd := a.updateSearchBrowse(msg)
+			return a, cmd
+		default:
+			a, cmd := a.updateNormal(msg)
+			return a, cmd
 		}
 
 	case streamURLMsg:
@@ -522,7 +620,6 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.gen != a.playGen {
 			return a, nil
 		}
-		// Auto-advance to next track
 		if a.trackPos < len(a.tracklist)-1 {
 			return a.playPos(a.trackPos + 1)
 		}
@@ -546,9 +643,23 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 	}
 
-	var cmd tea.Cmd
-	a.search, cmd = a.search.Update(msg)
-	return a, cmd
+	// Pass non-key messages to search model (handles search result messages)
+	if a.mode == modeSearchInput || a.mode == modeSearchBrowse {
+		var cmd tea.Cmd
+		a.search, cmd = a.search.Update(msg)
+		// Detect search results arriving: input blurs → transition to browse
+		if a.mode == modeSearchInput && !a.search.input.Focused() {
+			a.mode = modeSearchBrowse
+		}
+		return a, cmd
+	}
+	return a, nil
+}
+
+// --- View helpers ---
+
+func (a App) searchVisible() bool {
+	return a.mode == modeSearchInput || a.mode == modeSearchBrowse
 }
 
 func (a App) dlCheck() func(types.Track) bool {
@@ -602,7 +713,6 @@ func (a App) renderQueueView() string {
 		num := fmt.Sprintf("%d", i+1)
 		icons := statusIcons(a.likes.IsLiked(t.ID), a.dl != nil && a.dl.IsDownloaded(t))
 
-		// Determine styles based on state
 		var numSt, artSt, albSt, titSt, durSt lipgloss.Style
 		var marker string
 
@@ -712,14 +822,15 @@ func (a App) View() string {
 
 	var top, bottom string
 
-	if a.showHelp {
+	switch {
+	case a.mode == modeHelp:
 		helpOverlay := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("#FF6AC1")).
 			Padding(1, 2).
 			Render(
 				titleStyle.Render("Keybindings") + "\n\n" +
-					helpLine("1-4", "Switch tabs") +
+					helpLine("1-3", "Switch tabs") +
 					helpLine("/", "Focus search") +
 					helpLine("tab", "Toggle track/album/artist search") +
 					helpLine("enter", "Play track / browse album") +
@@ -746,7 +857,8 @@ func (a App) View() string {
 					helpLine("q", "Quit"),
 			)
 		top = fmt.Sprintf("\n  %s\n%s\n\n%s\n%s", header, tabBar, helpOverlay, dimStyle.Render("  esc to close"))
-	} else if a.searchOpen {
+
+	case a.searchVisible():
 		searchOverlay := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("#FF6AC1")).
@@ -754,7 +866,8 @@ func (a App) View() string {
 			Width(a.width - 6).
 			Render(a.search.View(a.width-12, a.likes.IsLiked, a.dlCheck()))
 		top = fmt.Sprintf("\n  %s\n%s\n\n%s\n%s%s", header, tabBar, searchOverlay, dimStyle.Render("  esc to close"), errView)
-	} else {
+
+	default:
 		var content string
 		switch a.activeTab {
 		case tabQueue:
@@ -773,7 +886,7 @@ func (a App) View() string {
 		if st.Active > 0 || st.Queued > 0 {
 			dlStatus = dimStyle.Render(fmt.Sprintf("  DL: %d active, %d queued, %d done", st.Active, st.Queued, st.Completed))
 			if st.Current != "" {
-				dlStatus += dimStyle.Render("  "+st.Current)
+				dlStatus += dimStyle.Render("  " + st.Current)
 			}
 			dlStatus += "\n"
 		} else if st.Completed > 0 || st.Failed > 0 {
