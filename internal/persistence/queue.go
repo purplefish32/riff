@@ -10,9 +10,12 @@ import (
 )
 
 type QueueStore struct {
-	Tracks   []types.Track `json:"tracks"`
-	Position int           `json:"position"`
-	path     string
+	Tracks       []types.Track `json:"tracks"`
+	Position     int           `json:"position"`
+	ActiveTab    int           `json:"active_tab"`
+	QueueCursor  int           `json:"queue_cursor"`
+	LikedCursor  int           `json:"liked_cursor"`
+	path         string
 }
 
 func NewQueueStore() *QueueStore {
@@ -43,6 +46,18 @@ func NewQueueStore() *QueueStore {
 func (s *QueueStore) Save(tracks []types.Track, position int) {
 	s.Tracks = tracks
 	s.Position = position
+
+	data, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		return
+	}
+	os.WriteFile(s.path, data, 0o644)
+}
+
+func (s *QueueStore) SaveUIState(activeTab, queueCursor, likedCursor int) {
+	s.ActiveTab = activeTab
+	s.QueueCursor = queueCursor
+	s.LikedCursor = likedCursor
 
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {

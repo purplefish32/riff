@@ -91,19 +91,36 @@ func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedS
 	if len(qs.Tracks) == 0 {
 		mode = modeSearchInput
 	}
+	queueCursor := qs.QueueCursor
+	if queueCursor >= len(qs.Tracks) && queueCursor > 0 {
+		queueCursor = len(qs.Tracks) - 1
+	}
+	if queueCursor < 0 {
+		queueCursor = 0
+	}
+	likedCursor := qs.LikedCursor
+	if likedCursor >= len(likes.Tracks) && likedCursor > 0 {
+		likedCursor = len(likes.Tracks) - 1
+	}
+	if likedCursor < 0 {
+		likedCursor = 0
+	}
 	return App{
-		mode:       mode,
-		search:     newSearchModel(),
-		client:     client,
-		player:     player,
-		likes:      likes,
-		dl:         dl,
-		config:     cfg,
-		queueStore: qs,
-		tracklist:  qs.Tracks,
-		trackPos:   qs.Position,
-		quality:    cfg.QualityIndex(),
-		volume:     cfg.Volume,
+		mode:        mode,
+		activeTab:   viewTab(qs.ActiveTab),
+		search:      newSearchModel(),
+		client:      client,
+		player:      player,
+		likes:       likes,
+		dl:          dl,
+		config:      cfg,
+		queueStore:  qs,
+		tracklist:   qs.Tracks,
+		trackPos:    qs.Position,
+		quality:     cfg.QualityIndex(),
+		volume:      cfg.Volume,
+		queueCursor: queueCursor,
+		likedCursor: likedCursor,
 	}
 }
 
@@ -159,6 +176,10 @@ func (a App) addAndPlay(track *types.Track) (App, tea.Cmd) {
 
 func (a App) saveQueue() {
 	a.queueStore.Save(a.tracklist, a.trackPos)
+}
+
+func (a App) saveUIState() {
+	a.queueStore.SaveUIState(int(a.activeTab), a.queueCursor, a.likedCursor)
 }
 
 const maxTracklist = 500
@@ -477,12 +498,15 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 		return a, nil
 	case "1":
 		a.activeTab = tabQueue
+		a.saveUIState()
 		return a, nil
 	case "2":
 		a.activeTab = tabLiked
+		a.saveUIState()
 		return a, nil
 	case "3":
 		a.activeTab = tabDownloads
+		a.saveUIState()
 		return a, nil
 	case "up", "k":
 		if a.activeTab == tabQueue && a.queueCursor > 0 {
