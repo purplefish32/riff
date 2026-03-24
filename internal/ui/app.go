@@ -77,6 +77,8 @@ type App struct {
 	width       int
 	height      int
 	err         error
+	statusMsg   string
+	statusTicks int // ticks remaining before status clears
 }
 
 func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedStore, dl *downloader.Downloader, cfg *persistence.Config, qs *persistence.QueueStore) App {
@@ -158,24 +160,24 @@ const maxTracklist = 500
 
 func (a App) withQueueAdd(track types.Track) App {
 	if len(a.tracklist) >= maxTracklist {
-		return a
+		return a.withStatus("Queue full (500 max)")
 	}
 	a.tracklist = append(a.tracklist, track)
 	a.saveQueue()
-	return a
+	return a.withStatus(fmt.Sprintf("Queued: %s", track.Title))
 }
 
 func (a App) withQueueAddAll(tracks []types.Track) App {
 	remaining := maxTracklist - len(a.tracklist)
 	if remaining <= 0 {
-		return a
+		return a.withStatus("Queue full (500 max)")
 	}
 	if len(tracks) > remaining {
 		tracks = tracks[:remaining]
 	}
 	a.tracklist = append(a.tracklist, tracks...)
 	a.saveQueue()
-	return a
+	return a.withStatus(fmt.Sprintf("Queued %d tracks", len(tracks)))
 }
 
 // targetTrack returns the track under focus based on current mode and tab.
@@ -213,6 +215,12 @@ func (a App) stopPlayback() App {
 	a.nowPlaying.paused = false
 	a.nowPlaying.position = 0
 	a.nowPlaying.duration = 0
+	return a
+}
+
+func (a App) withStatus(msg string) App {
+	a.statusMsg = msg
+	a.statusTicks = 3
 	return a
 }
 
@@ -406,6 +414,7 @@ func (a App) updateSearchBrowse(msg tea.KeyMsg) (App, tea.Cmd) {
 			a.dl.SetQuality(qualities[a.quality])
 			if target := a.targetTrackOrNowPlaying(); target != nil {
 				a.dl.QueueTrack(*target)
+				a = a.withStatus(fmt.Sprintf("Downloading: %s", target.Title))
 			}
 		}
 		return a, nil
@@ -419,13 +428,18 @@ func (a App) updateSearchBrowse(msg tea.KeyMsg) (App, tea.Cmd) {
 		return a, nil
 	case "l":
 		if target := a.targetTrackOrNowPlaying(); target != nil {
-			a.likes.Toggle(*target)
+			if a.likes.Toggle(*target) {
+				a = a.withStatus(fmt.Sprintf("Liked: %s", target.Title))
+			} else {
+				a = a.withStatus(fmt.Sprintf("Unliked: %s", target.Title))
+			}
 		}
 		return a, nil
 	case "Q":
 		a.quality = (a.quality + 1) % len(qualities)
 		a.config.Quality = qualities[a.quality]
 		a.config.Save()
+		a = a.withStatus(fmt.Sprintf("Quality: %s", qualities[a.quality]))
 		return a, nil
 	}
 	// Delegate j/k/up/down/backspace to search model
@@ -554,6 +568,7 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 			a.dl.SetQuality(qualities[a.quality])
 			if target := a.targetTrackOrNowPlaying(); target != nil {
 				a.dl.QueueTrack(*target)
+				a = a.withStatus(fmt.Sprintf("Downloading: %s", target.Title))
 			}
 		}
 		return a, nil
@@ -567,13 +582,18 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 		return a, nil
 	case "l":
 		if target := a.targetTrackOrNowPlaying(); target != nil {
-			a.likes.Toggle(*target)
+			if a.likes.Toggle(*target) {
+				a = a.withStatus(fmt.Sprintf("Liked: %s", target.Title))
+			} else {
+				a = a.withStatus(fmt.Sprintf("Unliked: %s", target.Title))
+			}
 		}
 		return a, nil
 	case "Q":
 		a.quality = (a.quality + 1) % len(qualities)
 		a.config.Quality = qualities[a.quality]
 		a.config.Save()
+		a = a.withStatus(fmt.Sprintf("Quality: %s", qualities[a.quality]))
 		return a, nil
 	}
 	return a, nil
@@ -590,6 +610,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		a = a.syncNowPlaying()
+		if a.statusTicks > 0 {
+			a.statusTicks--
+			if a.statusTicks == 0 {
+				a.statusMsg = ""
+			}
+		}
 		if a.nowPlaying.track != nil && !a.nowPlaying.paused {
 			pos, dur, err := a.player.GetPosition()
 			if err == nil {
@@ -821,6 +847,10 @@ func (a App) View() string {
 		errView = "\n" + errorStyle.Render(fmt.Sprintf("  Error: %s", a.err))
 	}
 
+	statusLine := ""
+	if a.statusMsg != "" {
+		statusLine = "  " + titleStyle.Render(a.statusMsg) + "\n"
+	}
 	help := dimStyle.Render("  ? help  / search  enter play  a queue  p prev  n next  space pause  s stop  q quit")
 
 	var top, bottom string
@@ -900,7 +930,7 @@ func (a App) View() string {
 		}
 	}
 
-	bottom = dlStatus + np + "\n" + help
+	bottom = statusLine + dlStatus + np + "\n" + help
 
 	topHeight := lipgloss.Height(top)
 	bottomHeight := lipgloss.Height(bottom)
