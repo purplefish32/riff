@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"os/exec"
@@ -21,6 +22,7 @@ type Player struct {
 	responses map[int]chan ipcResponse
 	respMu    sync.Mutex
 	onEnd     chan struct{}
+	log       *log.Logger
 }
 
 type ipcCommand struct {
@@ -35,7 +37,7 @@ type ipcResponse struct {
 	Event     string `json:"event"`
 }
 
-func New() (*Player, error) {
+func New(logger *log.Logger) (*Player, error) {
 	if _, err := exec.LookPath("mpv"); err != nil {
 		return nil, fmt.Errorf("mpv not found — install with: brew install mpv")
 	}
@@ -73,6 +75,7 @@ func New() (*Player, error) {
 		conn:      conn,
 		responses: make(map[int]chan ipcResponse),
 		onEnd:     make(chan struct{}, 1),
+		log:       logger,
 	}
 
 	go p.readLoop(bufio.NewReader(conn))
@@ -84,6 +87,7 @@ func (p *Player) readLoop(reader *bufio.Reader) {
 	for {
 		line, err := reader.ReadBytes('\n')
 		if err != nil {
+			p.log.Printf("mpv IPC read error: %s", err)
 			return
 		}
 

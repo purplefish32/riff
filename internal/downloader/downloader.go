@@ -3,6 +3,7 @@ package downloader
 import (
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -33,9 +34,10 @@ type Downloader struct {
 	status   Status
 	onUpdate func()
 	sem      chan struct{}
+	log      *log.Logger
 }
 
-func New(client *api.Client, quality string, onUpdate func()) *Downloader {
+func New(client *api.Client, quality string, onUpdate func(), logger *log.Logger) *Downloader {
 	home, _ := os.UserHomeDir()
 	return &Downloader{
 		client:   client,
@@ -43,6 +45,7 @@ func New(client *api.Client, quality string, onUpdate func()) *Downloader {
 		quality:  quality,
 		onUpdate: onUpdate,
 		sem:      make(chan struct{}, maxConcurrent),
+		log:      logger,
 	}
 }
 
@@ -150,6 +153,7 @@ func (d *Downloader) downloadTrack(track types.Track) {
 
 	url, err := d.client.GetStreamURL(track.ID, q)
 	if err != nil {
+		d.log.Printf("download failed (stream URL): %s - %s: %s", track.Artist.Name, track.Title, err)
 		d.mu.Lock()
 		d.status.Active--
 		d.status.Failed++
@@ -160,6 +164,7 @@ func (d *Downloader) downloadTrack(track types.Track) {
 	}
 
 	if err := d.downloadFile(url, path); err != nil {
+		d.log.Printf("download failed (file write): %s - %s: %s", track.Artist.Name, track.Title, err)
 		d.mu.Lock()
 		d.status.Active--
 		d.status.Failed++

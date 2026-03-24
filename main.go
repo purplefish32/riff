@@ -3,8 +3,10 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -26,9 +28,20 @@ func main() {
 	}
 
 	cfg := persistence.LoadConfig()
+
+	configDir, _ := os.UserConfigDir()
+	logPath := filepath.Join(configDir, "riff", "riff.log")
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: cannot open log file: %s\n", err)
+		logFile = os.Stderr
+	}
+	defer logFile.Close()
+	logger := log.New(logFile, "", log.LstdFlags)
+
 	client := api.New()
 
-	p, err := player.New()
+	p, err := player.New(logger)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
@@ -52,7 +65,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	dl := downloader.New(client, cfg.Quality, nil)
+	dl := downloader.New(client, cfg.Quality, nil, logger)
 	if cfg.DownloadDir != "" {
 		dl.SetBaseDir(cfg.DownloadDir)
 	}
