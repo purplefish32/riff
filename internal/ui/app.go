@@ -1177,16 +1177,16 @@ func (a App) renderQueueView() string {
 		}
 
 		row := marker + icons +
-			col(num, colNum, numSt) +
+			colRight(num, colNum, numSt) +
 			col(t.Artist.Name, tc.artist, artSt) +
 			col(t.Title, tc.title, titSt)
 		if tc.showAlbum {
 			row += col(t.Album.Title, tc.album, albSt)
 		}
 		if tc.showYear {
-			row += col(trackYear(t), colYear, durSt)
+			row += colRight(trackYear(t), colYear, durSt)
 		}
-		row += col(duration, colDuration, durSt)
+		row += colRight(duration, colDuration, durSt)
 		s += row + "\n"
 	}
 

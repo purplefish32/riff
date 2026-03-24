@@ -218,16 +218,16 @@ func computeAlbumCols(width int) albumCols {
 
 func trackHeader(tc trackCols) string {
 	s := "  " +
-		col("#", colNum, headerStyle) +
+		colRight("#", colNum, headerStyle) +
 		col("Artist", tc.artist, headerStyle) +
 		col("Title", tc.title, headerStyle)
 	if tc.showAlbum {
 		s += col("Album", tc.album, headerStyle)
 	}
 	if tc.showYear {
-		s += col("Year", colYear, headerStyle)
+		s += colRight("Year", colYear, headerStyle)
 	}
-	s += col("Time", colDuration, headerStyle)
+	s += colRight("Time", colDuration, headerStyle)
 	return s
 }
 
@@ -257,30 +257,30 @@ func trackRow(i int, track types.Track, selected bool, liked bool, downloaded bo
 
 	if selected {
 		s := titleStyle.Render("▸") + icons +
-			col(num, colNum, selectedStyle) +
+			colRight(num, colNum, selectedStyle) +
 			col(track.Artist.Name, tc.artist, selectedStyle) +
 			col(track.Title, tc.title, selectedStyle)
 		if tc.showAlbum {
 			s += col(track.Album.Title, tc.album, selectedStyle)
 		}
 		if tc.showYear {
-			s += col(trackYear(track), colYear, selectedStyle)
+			s += colRight(trackYear(track), colYear, selectedStyle)
 		}
-		s += col(duration, colDuration, selectedStyle)
+		s += colRight(duration, colDuration, selectedStyle)
 		return s
 	}
 
 	s := " " + icons +
-		col(num, colNum, dimStyle) +
+		colRight(num, colNum, dimStyle) +
 		col(track.Artist.Name, tc.artist, artistStyle) +
 		col(track.Title, tc.title, normalStyle)
 	if tc.showAlbum {
 		s += col(track.Album.Title, tc.album, dimStyle)
 	}
 	if tc.showYear {
-		s += col(trackYear(track), colYear, dimStyle)
+		s += colRight(trackYear(track), colYear, dimStyle)
 	}
-	s += col(duration, colDuration, dimStyle)
+	s += colRight(duration, colDuration, dimStyle)
 	return s
 }
 
@@ -288,8 +288,8 @@ func albumHeader(ac albumCols) string {
 	return "  " +
 		col("Album", ac.title, headerStyle) +
 		col("Artist", ac.artist, headerStyle) +
-		col("Year", colYear, headerStyle) +
-		col("Tracks", colTracks, headerStyle)
+		colRight("Year", colYear, headerStyle) +
+		colRight("Tracks", colTracks, headerStyle)
 }
 
 func albumRow(i int, album types.AlbumFull, selected bool, ac albumCols) string {
@@ -307,15 +307,15 @@ func albumRow(i int, album types.AlbumFull, selected bool, ac albumCols) string 
 		return titleStyle.Render("▸ ") +
 			col(album.Title, ac.title, selectedStyle) +
 			col(artist, ac.artist, selectedStyle) +
-			col(year, colYear, selectedStyle) +
-			col(tracks, colTracks, selectedStyle)
+			colRight(year, colYear, selectedStyle) +
+			colRight(tracks, colTracks, selectedStyle)
 	}
 
 	return "  " +
 		col(album.Title, ac.title, normalStyle) +
 		col(artist, ac.artist, artistStyle) +
-		col(year, colYear, dimStyle) +
-		col(tracks, colTracks, dimStyle)
+		colRight(year, colYear, dimStyle) +
+		colRight(tracks, colTracks, dimStyle)
 }
 
 func artistHeader(width int) string {

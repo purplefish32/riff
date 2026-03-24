@@ -1,6 +1,8 @@
 package ui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"github.com/charmbracelet/lipgloss"
+)
 
 func truncate(s string, max int) string {
 	runes := []rune(s)
@@ -15,4 +17,8 @@ func truncate(s string, max int) string {
 
 func col(s string, width int, style lipgloss.Style) string {
 	return style.Width(width).MaxWidth(width).Render(truncate(s, width-1))
+}
+
+func colRight(s string, width int, style lipgloss.Style) string {
+	return style.Width(width).MaxWidth(width).AlignHorizontal(lipgloss.Right).Render(truncate(s, width-1))
 }
