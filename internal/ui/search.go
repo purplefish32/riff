@@ -13,6 +13,7 @@ type searchMode int
 const (
 	modeTrack searchMode = iota
 	modeAlbum
+	modeArtist
 	modeBrowseAlbum
 )
 
@@ -21,6 +22,7 @@ type searchModel struct {
 	mode        searchMode
 	results     []types.Track
 	albums      []types.AlbumFull
+	artists     []types.ArtistFull
 	albumTracks []types.Track
 	albumTitle  string
 	cursor      int
@@ -35,6 +37,11 @@ type searchResultMsg struct {
 type albumSearchResultMsg struct {
 	albums []types.AlbumFull
 	err    error
+}
+
+type artistSearchResultMsg struct {
+	artists []types.ArtistFull
+	err     error
 }
 
 type albumTracksMsg struct {
@@ -74,6 +81,9 @@ func (m searchModel) Update(msg tea.Msg) (searchModel, tea.Cmd) {
 					m.mode = modeAlbum
 					m.input.Placeholder = "Search albums..."
 				case modeAlbum:
+					m.mode = modeArtist
+					m.input.Placeholder = "Search artists..."
+				case modeArtist:
 					m.mode = modeTrack
 					m.input.Placeholder = "Search tracks..."
 				}
@@ -97,6 +107,14 @@ func (m searchModel) Update(msg tea.Msg) (searchModel, tea.Cmd) {
 		m.loading = false
 		if msg.err == nil {
 			m.albums = msg.albums
+			m.mode = modeAlbum
+			m.cursor = 0
+			m.input.Blur()
+		}
+	case artistSearchResultMsg:
+		m.loading = false
+		if msg.err == nil {
+			m.artists = msg.artists
 			m.cursor = 0
 			m.input.Blur()
 		}
@@ -117,6 +135,8 @@ func (m searchModel) Update(msg tea.Msg) (searchModel, tea.Cmd) {
 
 func (m searchModel) listLen() int {
 	switch m.mode {
+	case modeArtist:
+		return len(m.artists)
 	case modeAlbum:
 		return len(m.albums)
 	case modeBrowseAlbum:
@@ -126,11 +146,155 @@ func (m searchModel) listLen() int {
 	}
 }
 
-func (m searchModel) View(width int) string {
-	modeLabel := "tracks"
-	if m.mode == modeAlbum || m.mode == modeBrowseAlbum {
-		modeLabel = "albums"
+// Fixed column widths
+const (
+	colLike     = 2
+	colNum      = 4
+	colDuration = 6
+	colYear     = 8
+	colTracks   = 8
+)
+
+type trackCols struct {
+	artist, album, title int
+}
+
+func computeTrackCols(width int) trackCols {
+	fixed := colLike + colNum + colDuration + 4 // padding
+	avail := width - fixed
+	if avail < 30 {
+		avail = 30
 	}
+	// 30% artist, 30% album, 40% title
+	return trackCols{
+		artist: avail * 30 / 100,
+		album:  avail * 30 / 100,
+		title:  avail * 40 / 100,
+	}
+}
+
+type albumCols struct {
+	title, artist int
+}
+
+func computeAlbumCols(width int) albumCols {
+	fixed := colYear + colTracks + 4
+	avail := width - fixed
+	if avail < 30 {
+		avail = 30
+	}
+	return albumCols{
+		title:  avail * 50 / 100,
+		artist: avail * 50 / 100,
+	}
+}
+
+func trackHeader(tc trackCols) string {
+	return "  " +
+		col("#", colNum, headerStyle) +
+		col("Artist", tc.artist, headerStyle) +
+		col("Album", tc.album, headerStyle) +
+		col("Title", tc.title, headerStyle) +
+		col("Time", colDuration, headerStyle)
+}
+
+func likeIcon(liked bool) string {
+	if liked {
+		return selectedStyle.Render("♥")
+	}
+	return " "
+}
+
+func trackRow(i int, track types.Track, selected bool, liked bool, tc trackCols) string {
+	duration := fmt.Sprintf("%d:%02d", track.Duration/60, track.Duration%60)
+	num := fmt.Sprintf("%d", i+1)
+	heart := likeIcon(liked)
+
+	if selected {
+		return selectedStyle.Render("▸") + heart +
+			col(num, colNum, selectedStyle) +
+			col(track.Artist.Name, tc.artist, selectedStyle) +
+			col(track.Album.Title, tc.album, selectedStyle) +
+			col(track.Title, tc.title, selectedStyle) +
+			col(duration, colDuration, selectedStyle)
+	}
+
+	return " " + heart +
+		col(num, colNum, dimStyle) +
+		col(track.Artist.Name, tc.artist, artistStyle) +
+		col(track.Album.Title, tc.album, dimStyle) +
+		col(track.Title, tc.title, normalStyle) +
+		col(duration, colDuration, dimStyle)
+}
+
+func albumHeader(ac albumCols) string {
+	return "  " +
+		col("Album", ac.title, headerStyle) +
+		col("Artist", ac.artist, headerStyle) +
+		col("Year", colYear, headerStyle) +
+		col("Tracks", colTracks, headerStyle)
+}
+
+func albumRow(i int, album types.AlbumFull, selected bool, ac albumCols) string {
+	artist := ""
+	if len(album.Artists) > 0 {
+		artist = album.Artists[0].Name
+	}
+	year := ""
+	if len(album.ReleaseDate) >= 4 {
+		year = album.ReleaseDate[:4]
+	}
+	tracks := fmt.Sprintf("%d", album.NumberOfTracks)
+
+	if selected {
+		return selectedStyle.Render("▸ ") +
+			col(album.Title, ac.title, selectedStyle) +
+			col(artist, ac.artist, selectedStyle) +
+			col(year, colYear, selectedStyle) +
+			col(tracks, colTracks, selectedStyle)
+	}
+
+	return "  " +
+		col(album.Title, ac.title, normalStyle) +
+		col(artist, ac.artist, artistStyle) +
+		col(year, colYear, dimStyle) +
+		col(tracks, colTracks, dimStyle)
+}
+
+func artistHeader(width int) string {
+	w := width - 8
+	if w < 20 {
+		w = 20
+	}
+	return "  " +
+		col("#", colNum, headerStyle) +
+		col("Artist", w, headerStyle)
+}
+
+func artistRow(i int, artist types.ArtistFull, selected bool, width int) string {
+	w := width - 8
+	if w < 20 {
+		w = 20
+	}
+	num := fmt.Sprintf("%d", i+1)
+
+	if selected {
+		return selectedStyle.Render("▸ ") +
+			col(num, colNum, selectedStyle) +
+			col(artist.Name, w, selectedStyle)
+	}
+
+	return "  " +
+		col(num, colNum, dimStyle) +
+		col(artist.Name, w, artistStyle)
+}
+
+func (m searchModel) View(width int, isLiked func(int) bool) string {
+	modeLabels := map[searchMode]string{
+		modeTrack: "tracks", modeAlbum: "albums", modeArtist: "artists",
+		modeBrowseAlbum: "albums",
+	}
+	modeLabel := modeLabels[m.mode]
 
 	s := searchPromptStyle.Render("Search: ") + m.input.View()
 	if m.input.Focused() {
@@ -143,61 +307,36 @@ func (m searchModel) View(width int) string {
 		return s
 	}
 
+	tc := computeTrackCols(width)
+	ac := computeAlbumCols(width)
+
 	switch m.mode {
 	case modeBrowseAlbum:
 		s += titleStyle.Render(fmt.Sprintf("  %s", m.albumTitle))
 		s += dimStyle.Render("  (backspace to go back)") + "\n\n"
+		s += trackHeader(tc) + "\n"
 		for i, track := range m.albumTracks {
-			duration := fmt.Sprintf("%d:%02d", track.Duration/60, track.Duration%60)
-			num := fmt.Sprintf("%2d.", track.TrackNumber)
-			if i == m.cursor {
-				s += selectedStyle.Render(fmt.Sprintf("▸ %s %s", num, track.Title)) +
-					"  " + dimStyle.Render(duration) + "\n"
-			} else {
-				s += fmt.Sprintf("  %s %s  %s\n",
-					dimStyle.Render(num),
-					track.Title,
-					dimStyle.Render(duration),
-				)
+			s += trackRow(i, track, i == m.cursor, isLiked(track.ID), tc) + "\n"
+		}
+	case modeArtist:
+		if len(m.artists) > 0 {
+			s += artistHeader(width) + "\n"
+			for i, artist := range m.artists {
+				s += artistRow(i, artist, i == m.cursor, width) + "\n"
 			}
 		}
 	case modeAlbum:
-		for i, album := range m.albums {
-			artist := ""
-			if len(album.Artists) > 0 {
-				artist = album.Artists[0].Name
-			}
-			year := ""
-			if len(album.ReleaseDate) >= 4 {
-				year = album.ReleaseDate[:4]
-			}
-			info := fmt.Sprintf("%d tracks", album.NumberOfTracks)
-			if year != "" {
-				info = year + " · " + info
-			}
-			if i == m.cursor {
-				s += selectedStyle.Render(fmt.Sprintf("▸ %s — %s", album.Title, artist)) +
-					"  " + dimStyle.Render(info) + "\n"
-			} else {
-				s += fmt.Sprintf("  %s — %s  %s\n",
-					album.Title,
-					artist,
-					dimStyle.Render(info),
-				)
+		if len(m.albums) > 0 {
+			s += albumHeader(ac) + "\n"
+			for i, album := range m.albums {
+				s += albumRow(i, album, i == m.cursor, ac) + "\n"
 			}
 		}
 	default:
-		for i, track := range m.results {
-			duration := fmt.Sprintf("%d:%02d", track.Duration/60, track.Duration%60)
-			if i == m.cursor {
-				s += selectedStyle.Render(fmt.Sprintf("▸ %s — %s", track.Title, track.Artist.Name)) +
-					"  " + dimStyle.Render(duration) + "\n"
-			} else {
-				s += fmt.Sprintf("  %s — %s  %s\n",
-					track.Title,
-					track.Artist.Name,
-					dimStyle.Render(duration),
-				)
+		if len(m.results) > 0 {
+			s += trackHeader(tc) + "\n"
+			for i, track := range m.results {
+				s += trackRow(i, track, i == m.cursor, isLiked(track.ID), tc) + "\n"
 			}
 		}
 	}
@@ -218,6 +357,13 @@ func (m searchModel) selectedTrack() *types.Track {
 		}
 		return &m.results[m.cursor]
 	}
+}
+
+func (m searchModel) selectedArtist() *types.ArtistFull {
+	if m.mode != modeArtist || len(m.artists) == 0 {
+		return nil
+	}
+	return &m.artists[m.cursor]
 }
 
 func (m searchModel) selectedAlbum() *types.AlbumFull {

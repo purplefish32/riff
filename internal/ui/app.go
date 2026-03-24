@@ -2,11 +2,16 @@ package ui
 
 import (
 	"fmt"
+	"os/exec"
+	"runtime"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/purplefish32/spofree-cli/internal/api"
+	"github.com/purplefish32/spofree-cli/internal/downloader"
+	"github.com/purplefish32/spofree-cli/internal/persistence"
 	"github.com/purplefish32/spofree-cli/internal/player"
 	"github.com/purplefish32/spofree-cli/internal/types"
 )
@@ -36,20 +41,28 @@ type App struct {
 	history    []types.Track
 	client     *api.Client
 	player     *player.Player
+	likes      *persistence.LikedStore
+	dl         *downloader.Downloader
+	config     *persistence.Config
 	playGen    int
 	quality    int
+	volume     int
 	showHelp   bool
 	width      int
 	height     int
 	err        error
 }
 
-func NewApp(client *api.Client, player *player.Player) App {
+func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedStore, dl *downloader.Downloader, cfg *persistence.Config) App {
 	return App{
 		search:  newSearchModel(),
 		client:  client,
 		player:  player,
-		quality: 2, // LOSSLESS
+		likes:   likes,
+		dl:      dl,
+		config:  cfg,
+		quality: cfg.QualityIndex(),
+		volume:  cfg.Volume,
 	}
 }
 
@@ -115,15 +128,33 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if a.search.input.Focused() && a.search.input.Value() != "" {
 				a.search.loading = true
 				query := a.search.input.Value()
-				if a.search.mode == modeAlbum {
+				switch a.search.mode {
+				case modeAlbum:
 					return a, func() tea.Msg {
 						albums, err := a.client.SearchAlbums(query)
 						return albumSearchResultMsg{albums: albums, err: err}
 					}
+				case modeArtist:
+					return a, func() tea.Msg {
+						artists, err := a.client.SearchArtists(query)
+						return artistSearchResultMsg{artists: artists, err: err}
+					}
+				default:
+					return a, func() tea.Msg {
+						tracks, err := a.client.SearchTracks(query)
+						return searchResultMsg{tracks: tracks, err: err}
+					}
 				}
-				return a, func() tea.Msg {
-					tracks, err := a.client.SearchTracks(query)
-					return searchResultMsg{tracks: tracks, err: err}
+			}
+			// Artist selected → search their albums
+			if a.search.mode == modeArtist {
+				if artist := a.search.selectedArtist(); artist != nil {
+					a.search.loading = true
+					name := artist.Name
+					return a, func() tea.Msg {
+						albums, err := a.client.SearchAlbums(name)
+						return albumSearchResultMsg{albums: albums, err: err}
+					}
 				}
 			}
 			if a.search.mode == modeAlbum {
@@ -224,9 +255,67 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.player.Seek(5)
 				return a, nil
 			}
+		case "+", "=":
+			if !a.search.input.Focused() {
+				a.volume += 5
+				if a.volume > 150 {
+					a.volume = 150
+				}
+				a.player.SetVolume(a.volume)
+				a.config.Volume = a.volume
+				a.config.Save()
+				return a, nil
+			}
+		case "-":
+			if !a.search.input.Focused() {
+				a.volume -= 5
+				if a.volume < 0 {
+					a.volume = 0
+				}
+				a.player.SetVolume(a.volume)
+				a.config.Volume = a.volume
+				a.config.Save()
+				return a, nil
+			}
+		case "d":
+			if !a.search.input.Focused() && a.dl != nil {
+				a.dl.SetQuality(qualities[a.quality])
+				if track := a.search.selectedTrack(); track != nil {
+					a.dl.QueueTrack(*track)
+				} else if a.nowPlaying.track != nil {
+					a.dl.QueueTrack(*a.nowPlaying.track)
+				}
+				return a, nil
+			}
+		case "D":
+			if !a.search.input.Focused() && a.dl != nil {
+				a.dl.SetQuality(qualities[a.quality])
+				if tracks := a.search.browsingAlbumTracks(); len(tracks) > 0 {
+					a.dl.QueueAlbum(tracks)
+				}
+				return a, nil
+			}
+		case "l":
+			if !a.search.input.Focused() {
+				if track := a.search.selectedTrack(); track != nil {
+					a.likes.Toggle(*track)
+				} else if a.nowPlaying.track != nil {
+					a.likes.Toggle(*a.nowPlaying.track)
+				}
+				return a, nil
+			}
+		case "u":
+			if !a.search.input.Focused() {
+				if track := a.search.selectedTrack(); track != nil {
+					openBrowser(fmt.Sprintf("https://monochrome.tf/album/%d", track.Album.ID))
+				}
+				return a, nil
+			}
 		case "Q":
 			if !a.search.input.Focused() {
 				a.quality = (a.quality + 1) % len(qualities)
+				a.config.Quality = qualities[a.quality]
+				a.config.Save()
 				return a, nil
 			}
 		case "?":
@@ -297,25 +386,58 @@ func (a App) View() string {
 		Foreground(lipgloss.Color("#FF6AC1")).
 		Render("♫ spofree-cli")
 
-	search := a.search.View(a.width)
+	search := a.search.View(a.width, a.likes.IsLiked)
 	a.nowPlaying.quality = qualities[a.quality]
+	a.nowPlaying.volume = a.volume
+	if a.nowPlaying.track != nil {
+		a.nowPlaying.liked = a.likes.IsLiked(a.nowPlaying.track.ID)
+	}
 	np := a.nowPlaying.View(a.width)
 
 	queueView := ""
 	if len(a.queue) > 0 {
-		queueView = "\n" + dimStyle.Render(fmt.Sprintf("  Queue: %d track", len(a.queue)))
+		label := "track"
 		if len(a.queue) != 1 {
-			queueView += dimStyle.Render("s")
+			label = "tracks"
 		}
+		queueView = "\n" + dimStyle.Render(fmt.Sprintf("  Queue: %d %s", len(a.queue), label)) + "\n"
 		limit := len(a.queue)
-		if limit > 3 {
-			limit = 3
+		if limit > 5 {
+			limit = 5
 		}
+		tc := computeTrackCols(a.width)
 		for i, t := range a.queue[:limit] {
-			queueView += "\n" + dimStyle.Render(fmt.Sprintf("    %d. %s — %s", i+1, t.Title, t.Artist.Name))
+			dur := fmt.Sprintf("%d:%02d", t.Duration/60, t.Duration%60)
+			queueView += "    " +
+				col(fmt.Sprintf("%d", i+1), colNum, dimStyle) +
+				col(t.Artist.Name, tc.artist, dimStyle) +
+				col(t.Title, tc.title, dimStyle) +
+				col(dur, colDuration, dimStyle) + "\n"
 		}
-		if len(a.queue) > 3 {
-			queueView += "\n" + dimStyle.Render(fmt.Sprintf("    ... and %d more", len(a.queue)-3))
+		if len(a.queue) > 5 {
+			queueView += dimStyle.Render(fmt.Sprintf("    ... and %d more", len(a.queue)-5)) + "\n"
+		}
+	}
+
+	dlView := ""
+	if a.dl != nil {
+		st := a.dl.Status()
+		if st.Active > 0 || st.Completed > 0 || st.Failed > 0 {
+			parts := []string{}
+			if st.Active > 0 {
+				parts = append(parts, fmt.Sprintf("downloading %d", st.Active))
+			}
+			if st.Completed > 0 {
+				parts = append(parts, fmt.Sprintf("done %d", st.Completed))
+			}
+			if st.Failed > 0 {
+				parts = append(parts, fmt.Sprintf("failed %d", st.Failed))
+			}
+			dlLine := "  DL: " + strings.Join(parts, " · ")
+			if st.Current != "" && st.Active > 0 {
+				dlLine += "  " + st.Current
+			}
+			dlView = "\n" + dimStyle.Render(dlLine)
 		}
 	}
 
@@ -346,8 +468,13 @@ func (a App) View() string {
 					helpLine("a", "Queue track / queue album") +
 					helpLine("A", "Queue all album tracks") +
 					helpLine("left/right", "Seek -5s / +5s") +
+					helpLine("+/-", "Volume up/down") +
 					"\n" +
 					helpLine("j/k", "Navigate up/down") +
+					helpLine("d", "Download track") +
+					helpLine("D", "Download album") +
+					helpLine("l", "Toggle like") +
+					helpLine("u", "Open album in browser") +
 					helpLine("Q", "Cycle quality") +
 					helpLine("?", "Toggle this help") +
 					helpLine("q", "Quit"),
@@ -358,7 +485,7 @@ func (a App) View() string {
 
 	help := dimStyle.Render("  ? help  / search  enter play  a queue  p prev  n next  space pause  s stop  q quit")
 
-	return fmt.Sprintf("\n  %s\n\n%s%s%s\n%s\n%s\n", header, search, queueView, errView, np, help)
+	return fmt.Sprintf("\n  %s\n\n%s%s%s%s\n%s\n%s\n", header, search, queueView, dlView, errView, np, help)
 }
 
 func helpLine(key, desc string) string {
@@ -370,4 +497,15 @@ func helpLine(key, desc string) string {
 			Render(key),
 		desc,
 	)
+}
+
+func openBrowser(url string) {
+	switch runtime.GOOS {
+	case "darwin":
+		exec.Command("open", url).Start()
+	case "linux":
+		exec.Command("xdg-open", url).Start()
+	case "windows":
+		exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+	}
 }

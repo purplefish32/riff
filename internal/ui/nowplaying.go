@@ -10,9 +10,11 @@ import (
 type nowPlayingModel struct {
 	track    *types.Track
 	paused   bool
+	liked    bool
 	position float64
 	duration float64
 	quality  string
+	volume   int
 }
 
 func formatTime(secs float64) string {
@@ -36,12 +38,21 @@ func (m nowPlayingModel) View(width int) string {
 		qualityLabel = "  " + dimStyle.Render(m.quality)
 	}
 
-	info := fmt.Sprintf("  %s  %s — %s  [%s]%s",
+	heart := ""
+	if m.liked {
+		heart = "  " + selectedStyle.Render("♥")
+	}
+
+	vol := dimStyle.Render(fmt.Sprintf("  vol:%d%%", m.volume))
+
+	info := fmt.Sprintf("  %s  %s — %s  [%s]%s%s%s",
 		state,
 		titleStyle.Render(m.track.Title),
 		artistStyle.Render(m.track.Artist.Name),
 		dimStyle.Render(m.track.Album.Title),
 		qualityLabel,
+		heart,
+		vol,
 	)
 
 	// Progress bar

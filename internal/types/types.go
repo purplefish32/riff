@@ -23,6 +23,21 @@ type AlbumFull struct {
 	Artists        []Artist `json:"artists"`
 }
 
+type ArtistFull struct {
+	ID         int    `json:"id"`
+	Name       string `json:"name"`
+	Picture    string `json:"picture"`
+	Popularity int    `json:"popularity"`
+}
+
+type ArtistSearchResponse struct {
+	Data struct {
+		Artists struct {
+			Items []ArtistFull `json:"items"`
+		} `json:"artists"`
+	} `json:"data"`
+}
+
 type Track struct {
 	ID           int      `json:"id"`
 	Title        string   `json:"title"`
@@ -30,6 +45,7 @@ type Track struct {
 	TrackNumber  int      `json:"trackNumber"`
 	Explicit     bool     `json:"explicit"`
 	AudioQuality string   `json:"audioQuality"`
+	URL          string   `json:"url"`
 	Artist       Artist   `json:"artist"`
 	Artists      []Artist `json:"artists"`
 	Album        Album    `json:"album"`

@@ -28,4 +28,9 @@ var (
 
 	normalStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#FFFFFF"))
+
+	headerStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#888888")).
+			Bold(true).
+			Underline(true)
 )
