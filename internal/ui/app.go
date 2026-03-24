@@ -57,28 +57,30 @@ const (
 )
 
 type App struct {
-	mode        inputMode
-	activeTab   viewTab
-	search      searchModel
-	nowPlaying  nowPlayingModel
-	tracklist   []types.Track
-	trackPos    int // index of currently playing track, -1 if none
-	likedCursor int
-	queueCursor int // cursor for browsing the queue view
-	client      *api.Client
-	player      *player.Player
-	likes       *persistence.LikedStore
-	dl          *downloader.Downloader
-	config      *persistence.Config
-	queueStore  *persistence.QueueStore
-	playGen     int
-	quality     int
-	volume      int
-	width       int
-	height      int
-	err         error
-	statusMsg   string
-	statusTicks int // ticks remaining before status clears
+	mode             inputMode
+	activeTab        viewTab
+	search           searchModel
+	nowPlaying       nowPlayingModel
+	tracklist        []types.Track
+	trackPos         int // index of currently playing track, -1 if none
+	likedCursor      int
+	queueCursor      int // cursor for browsing the queue view
+	queueScrollOffset int
+	likedScrollOffset int
+	client           *api.Client
+	player           *player.Player
+	likes            *persistence.LikedStore
+	dl               *downloader.Downloader
+	config           *persistence.Config
+	queueStore       *persistence.QueueStore
+	playGen          int
+	quality          int
+	volume           int
+	width            int
+	height           int
+	err              error
+	statusMsg        string
+	statusTicks      int // ticks remaining before status clears
 }
 
 func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedStore, dl *downloader.Downloader, cfg *persistence.Config, qs *persistence.QueueStore) App {
@@ -471,17 +473,45 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 	case "up", "k":
 		if a.activeTab == tabQueue && a.queueCursor > 0 {
 			a.queueCursor--
+			visibleRows := a.height - 12
+			if visibleRows < 1 {
+				visibleRows = 1
+			}
+			if a.queueCursor < a.queueScrollOffset {
+				a.queueScrollOffset = a.queueCursor
+			}
 		}
 		if a.activeTab == tabLiked && a.likedCursor > 0 {
 			a.likedCursor--
+			visibleRows := a.height - 12
+			if visibleRows < 1 {
+				visibleRows = 1
+			}
+			if a.likedCursor < a.likedScrollOffset {
+				a.likedScrollOffset = a.likedCursor
+			}
 		}
 		return a, nil
 	case "down", "j":
 		if a.activeTab == tabQueue && a.queueCursor < len(a.tracklist)-1 {
 			a.queueCursor++
+			visibleRows := a.height - 12
+			if visibleRows < 1 {
+				visibleRows = 1
+			}
+			if a.queueCursor >= a.queueScrollOffset+visibleRows {
+				a.queueScrollOffset = a.queueCursor - visibleRows + 1
+			}
 		}
 		if a.activeTab == tabLiked && a.likedCursor < len(a.likes.Tracks)-1 {
 			a.likedCursor++
+			visibleRows := a.height - 12
+			if visibleRows < 1 {
+				visibleRows = 1
+			}
+			if a.likedCursor >= a.likedScrollOffset+visibleRows {
+				a.likedScrollOffset = a.likedCursor - visibleRows + 1
+			}
 		}
 		return a, nil
 	case "enter":
@@ -738,9 +768,25 @@ func (a App) renderQueueView() string {
 		return dimStyle.Render("  Queue is empty. Press 'a' on a track to add it.")
 	}
 
+	visibleRows := a.height - 12
+	if visibleRows < 1 {
+		visibleRows = 1
+	}
+
 	tc := computeTrackCols(a.width)
 	s := trackHeader(tc) + "\n"
-	for i, t := range a.tracklist {
+
+	end := a.queueScrollOffset + visibleRows
+	if end > len(a.tracklist) {
+		end = len(a.tracklist)
+	}
+
+	if a.queueScrollOffset > 0 {
+		s += dimStyle.Render(fmt.Sprintf("  ^ %d more above", a.queueScrollOffset)) + "\n"
+	}
+
+	for i := a.queueScrollOffset; i < end; i++ {
+		t := a.tracklist[i]
 		isPlaying := i == a.trackPos
 		isCursor := i == a.queueCursor
 		played := a.trackPos >= 0 && i < a.trackPos
@@ -783,6 +829,11 @@ func (a App) renderQueueView() string {
 		row += col(duration, colDuration, durSt)
 		s += row + "\n"
 	}
+
+	if end < len(a.tracklist) {
+		s += dimStyle.Render(fmt.Sprintf("  v %d more below", len(a.tracklist)-end)) + "\n"
+	}
+
 	s += "\n" + dimStyle.Render("  enter play  x remove  / search")
 	return s
 }
@@ -792,11 +843,32 @@ func (a App) renderLikedView() string {
 		return dimStyle.Render("  No liked tracks yet. Press 'l' on a track to like it.")
 	}
 
+	visibleRows := a.height - 12
+	if visibleRows < 1 {
+		visibleRows = 1
+	}
+
 	tc := computeTrackCols(a.width)
 	s := trackHeader(tc) + "\n"
-	for i, t := range a.likes.Tracks {
+
+	end := a.likedScrollOffset + visibleRows
+	if end > len(a.likes.Tracks) {
+		end = len(a.likes.Tracks)
+	}
+
+	if a.likedScrollOffset > 0 {
+		s += dimStyle.Render(fmt.Sprintf("  ^ %d more above", a.likedScrollOffset)) + "\n"
+	}
+
+	for i := a.likedScrollOffset; i < end; i++ {
+		t := a.likes.Tracks[i]
 		s += trackRow(i, t, i == a.likedCursor, true, a.dl != nil && a.dl.IsDownloaded(t), tc) + "\n"
 	}
+
+	if end < len(a.likes.Tracks) {
+		s += dimStyle.Render(fmt.Sprintf("  v %d more below", len(a.likes.Tracks)-end)) + "\n"
+	}
+
 	s += "\n" + dimStyle.Render("  enter play  a queue  l unlike")
 	return s
 }
