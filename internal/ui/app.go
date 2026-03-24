@@ -67,6 +67,9 @@ type App struct {
 	queueCursor      int // cursor for browsing the queue view
 	queueScrollOffset int
 	likedScrollOffset int
+	undoTrack        *types.Track
+	undoPos          int
+	undoTrackPos     int
 	client           *api.Client
 	player           *player.Player
 	likes            *persistence.LikedStore
@@ -538,6 +541,12 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 		if a.activeTab != tabQueue || len(a.tracklist) == 0 {
 			return a, nil
 		}
+		// Save undo state before removal
+		trackCopy := a.tracklist[a.queueCursor]
+		a.undoTrack = &trackCopy
+		a.undoPos = a.queueCursor
+		a.undoTrackPos = a.trackPos
+
 		removingPlaying := a.queueCursor == a.trackPos
 		a.tracklist = append(a.tracklist[:a.queueCursor], a.tracklist[a.queueCursor+1:]...)
 
@@ -561,6 +570,27 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 			}
 		}
 		a.queueStore.Save(a.tracklist, a.trackPos)
+		return a, nil
+	case "ctrl+z":
+		if a.undoTrack == nil {
+			return a, nil
+		}
+		// Re-insert the track at its original position
+		pos := a.undoPos
+		if pos > len(a.tracklist) {
+			pos = len(a.tracklist)
+		}
+		restored := make([]types.Track, len(a.tracklist)+1)
+		copy(restored, a.tracklist[:pos])
+		restored[pos] = *a.undoTrack
+		copy(restored[pos+1:], a.tracklist[pos:])
+		a.tracklist = restored
+		a.trackPos = a.undoTrackPos
+		a.queueCursor = pos
+		title := a.undoTrack.Title
+		a.undoTrack = nil
+		a.queueStore.Save(a.tracklist, a.trackPos)
+		a = a.withStatus(fmt.Sprintf("Restored: %s", title))
 		return a, nil
 	case "a":
 		if a.activeTab == tabLiked && len(a.likes.Tracks) > 0 {
