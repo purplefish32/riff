@@ -231,9 +231,9 @@ func computeAlbumCols(width int) albumCols {
 func trackHeader(tc trackCols) string {
 	// Ultra-narrow: just title header
 	if tc.artist == 0 {
-		return "  " + col("Title", tc.title, headerStyle)
+		return "   " + col("Title", tc.title, headerStyle)
 	}
-	s := "  " +
+	s := "   " +
 		colRight("#", colNum, headerStyle) +
 		col("Artist", tc.artist, headerStyle) +
 		col("Title", tc.title, headerStyle)
