@@ -1917,19 +1917,19 @@ func (a App) contextHelp() string {
 	case modeSearchInput:
 		return dimStyle.Render("  enter search  tab mode  esc close")
 	case modeSearchBrowse:
-		return dimStyle.Render("  ↑↓ navigate  enter select  a queue  d download  / new search  esc close")
+		return dimStyle.Render("  enter select  a queue  d download  esc close")
 	case modeHelp:
 		return dimStyle.Render("  esc close")
 	case modeFilter:
-		return dimStyle.Render("  type to filter  ↑↓ navigate  enter play  esc clear")
+		return dimStyle.Render("  type to filter  enter play  esc clear")
 	default:
 		switch a.activeTab {
 		case tabLiked:
-			return dimStyle.Render("  ↑↓ navigate  enter play  a queue  d download  l unlike  gg top  G end  / search  ? help  q quit")
+			return dimStyle.Render("  enter play  a queue  l unlike  / search  ? more  q quit")
 		case tabDownloads:
-			return dimStyle.Render("  r retry  / search  ? help  q quit")
+			return dimStyle.Render("  r retry  / search  ? more  q quit")
 		default:
-			return dimStyle.Render("  ↑↓ navigate  J/K reorder  c now-playing  t time  enter play  x remove  d download  l like  gg top  G end  / search  ? help  q quit")
+			return dimStyle.Render("  enter play  x remove  J/K move  / search  ? more  q quit")
 		}
 	}
 }
