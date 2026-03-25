@@ -517,6 +517,14 @@ func (a App) updateSearchBrowse(msg tea.KeyMsg) (App, tea.Cmd) {
 		a.config.Save()
 		a = a.withStatus(fmt.Sprintf("Quality: %s", qualities[a.quality]))
 		return a, nil
+	case "G":
+		if n := a.search.listLen(); n > 0 {
+			a.search.cursor = n - 1
+		}
+		return a, nil
+	case "home", "ctrl+a":
+		a.search.cursor = 0
+		return a, nil
 	}
 	// Delegate j/k/up/down/backspace to search model
 	var cmd tea.Cmd
@@ -870,6 +878,34 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 			a.gotoInput.Reset()
 			a.gotoInput.Focus()
 			return a, nil
+		}
+		return a, nil
+	case "G":
+		visibleRows := a.height - 12
+		if visibleRows < 1 {
+			visibleRows = 1
+		}
+		if a.activeTab == tabQueue && len(a.tracklist) > 0 {
+			a.queueCursor = len(a.tracklist) - 1
+			if a.queueCursor >= a.queueScrollOffset+visibleRows {
+				a.queueScrollOffset = a.queueCursor - visibleRows + 1
+			}
+		}
+		if a.activeTab == tabLiked && len(a.likes.Tracks) > 0 {
+			a.likedCursor = len(a.likes.Tracks) - 1
+			if a.likedCursor >= a.likedScrollOffset+visibleRows {
+				a.likedScrollOffset = a.likedCursor - visibleRows + 1
+			}
+		}
+		return a, nil
+	case "home", "ctrl+a":
+		if a.activeTab == tabQueue {
+			a.queueCursor = 0
+			a.queueScrollOffset = 0
+		}
+		if a.activeTab == tabLiked {
+			a.likedCursor = 0
+			a.likedScrollOffset = 0
 		}
 		return a, nil
 	}
@@ -1484,6 +1520,9 @@ func (a App) View() string {
 					helpLine("+/-", "Volume up/down") +
 					"\n" +
 					helpLine("j/k", "Navigate up/down") +
+					helpLine("G / home", "Jump to last / first item") +
+					helpLine("ctrl+u/d", "Page up / page down") +
+					helpLine("f", "Filter current list") +
 					helpLine("d", "Download track") +
 					helpLine("D", "Download album") +
 					helpLine("l", "Toggle like") +
@@ -1543,11 +1582,11 @@ func (a App) contextHelp() string {
 	default:
 		switch a.activeTab {
 		case tabLiked:
-			return dimStyle.Render("  ↑↓ navigate  enter play  a queue  d download  l unlike  g goto  / search  ? help  q quit")
+			return dimStyle.Render("  ↑↓ navigate  enter play  a queue  d download  l unlike  g goto  G end  home top  / search  ? help  q quit")
 		case tabDownloads:
 			return dimStyle.Render("  r retry  / search  ? help  q quit")
 		default:
-			return dimStyle.Render("  ↑↓ navigate  enter play  x remove  d download  l like  g goto  / search  ? help  q quit")
+			return dimStyle.Render("  ↑↓ navigate  enter play  x remove  d download  l like  g goto  G end  home top  / search  ? help  q quit")
 		}
 	}
 }
