@@ -47,7 +47,6 @@ var qualities = []string{"LOW", "HIGH", "LOSSLESS", "HI_RES"}
 
 var spinnerFrames = []string{"▁", "▂", "▃", "▄", "▅", "▆", "▇", "█", "▇", "▆", "▅", "▄", "▃", "▂"}
 
-var vuBars = []string{"▁", "▂", "▃", "▄", "▅", "▆", "▇"}
 
 type tickMsg struct{}
 
@@ -118,7 +117,7 @@ type App struct {
 	showPlayCounts   bool
 	showAlbumArt     bool
 	audioInfo        string
-	vuLevels         [5]int
+
 }
 
 func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedStore, dl *downloader.Downloader, cfg *persistence.Config, qs *persistence.QueueStore, pc *persistence.PlayCountStore, ps *persistence.PlaylistStore) App {
@@ -351,12 +350,6 @@ func (a App) syncNowPlaying() App {
 		a.nowPlaying.liked = a.likes.IsLiked(a.nowPlaying.track.ID)
 		a.nowPlaying.coverID = a.nowPlaying.track.Album.Cover
 	}
-	// Build VU meter string
-	var vu strings.Builder
-	for _, level := range a.vuLevels {
-		vu.WriteString(titleStyle.Render(vuBars[level]))
-	}
-	a.nowPlaying.vuMeter = vu.String()
 	return a
 }
 
@@ -1684,42 +1677,6 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		a.tickCount++
 		a.spinnerIdx = (a.spinnerIdx + 1) % len(spinnerFrames)
-		// Animate VU meter
-		if a.nowPlaying.track != nil && !a.nowPlaying.paused {
-			left, right := a.player.GetAudioLevels()
-			if left > -99 || right > -99 {
-				// Real audio data available
-				l := dbToLevel(left, 1.0)
-				r := dbToLevel(right, 1.0)
-				mid := (l + r) / 2
-				a.vuLevels[0] = l * 6 / 10
-				a.vuLevels[1] = l
-				a.vuLevels[2] = mid
-				a.vuLevels[3] = r
-				a.vuLevels[4] = r * 6 / 10
-			} else {
-				// Fallback: smooth random walk per bar
-				for i := range a.vuLevels {
-					delta := rand.Intn(3) - 1
-					a.vuLevels[i] += delta
-					if a.vuLevels[i] < 1 {
-						a.vuLevels[i] = 1
-					}
-					if a.vuLevels[i] > 6 {
-						a.vuLevels[i] = 6
-					}
-				}
-				// Enforce symmetric shape: mirror left onto right
-				a.vuLevels[4] = a.vuLevels[0]
-				a.vuLevels[3] = a.vuLevels[1]
-			}
-		} else {
-			for i := range a.vuLevels {
-				if a.vuLevels[i] > 0 {
-					a.vuLevels[i]--
-				}
-			}
-		}
 		// Every 10th tick (~1 second): update position, status, sync
 		if a.tickCount%10 == 0 {
 			a = a.syncNowPlaying()
@@ -2376,27 +2333,6 @@ func isNetworkError(err error) bool {
 		strings.Contains(s, "i/o timeout") ||
 		strings.Contains(s, "network") ||
 		strings.Contains(s, "all instances failed")
-}
-
-// dbToLevel converts a dB value (-60..0) to a VU bar level (0..6).
-// scale adjusts sensitivity (0.7 = outer bars, 1.0 = inner bars).
-func dbToLevel(db, scale float64) int {
-	if db <= -60 {
-		return 0
-	}
-	if db >= 0 {
-		return 6
-	}
-	// Map -60..0 dB to 0..6, apply scale
-	normalized := (db + 60) / 60 * scale
-	level := int(normalized * 7)
-	if level < 0 {
-		level = 0
-	}
-	if level > 6 {
-		level = 6
-	}
-	return level
 }
 
 func openBrowser(url string) {

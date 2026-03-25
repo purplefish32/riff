@@ -22,7 +22,6 @@ type nowPlayingModel struct {
 	coverID       string
 	albumArt      string
 	showAlbumArt  bool
-	vuMeter       string
 }
 
 func newNowPlayingModel() nowPlayingModel {
@@ -49,12 +48,8 @@ func (m nowPlayingModel) View(width int) string {
 		state = dimStyle.Render("⏸")
 	}
 
-	// Line 1: state + VU meter + title
-	vu := m.vuMeter
-	if vu == "" {
-		vu = dimStyle.Render("▁▁▁▁▁")
-	}
-	line1 := fmt.Sprintf("  %s %s  %s", state, vu, titleStyle.Render(m.track.Title))
+	// Line 1: state + title
+	line1 := fmt.Sprintf("  %s  %s", state, titleStyle.Render(m.track.Title))
 
 	// Line 2: metadata
 	var meta []string
