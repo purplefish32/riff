@@ -366,14 +366,8 @@ func (a App) updateSearchInput(msg tea.KeyMsg) (App, tea.Cmd) {
 			return a, nil
 		}
 		query := a.search.input.Value()
-		// Skip API call if query and mode are unchanged
-		if query == a.search.lastQuery && a.search.mode == a.search.lastMode {
-			return a, nil
-		}
 		a.search.addToHistory(query)
 		a.search.loading = true
-		a.search.lastQuery = query
-		a.search.lastMode = a.search.mode
 		switch a.search.mode {
 		case modeAlbum:
 			return a, func() tea.Msg {
