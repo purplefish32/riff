@@ -37,7 +37,7 @@ type queueAlbumMsg struct {
 
 var qualities = []string{"LOW", "HIGH", "LOSSLESS", "HI_RES"}
 
-var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+var spinnerFrames = []string{"▁", "▂", "▃", "▄", "▅", "▆", "▇", "█", "▇", "▆", "▅", "▄", "▃", "▂"}
 
 type tickMsg struct{}
 
