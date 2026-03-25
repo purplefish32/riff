@@ -1419,15 +1419,31 @@ func (a App) execCommand(input string) (App, tea.Cmd) {
 		a.activePlaylist = ""
 		return a.withStatus("Discarded"), nil
 	case "clear":
-		a.tracklist = nil
-		a.trackPos = -1
-		a.queueCursor = 0
-		a.queueScrollOffset = 0
-		a.saveQueue()
-		a.player.Stop()
-		a.nowPlaying.track = nil
-		a.activePlaylist = ""
-		return a.withStatus("Queue cleared"), nil
+		if len(args) == 0 {
+			return a.withStatus("Usage: clear queue|history"), nil
+		}
+		switch args[0] {
+		case "queue":
+			a.tracklist = nil
+			a.trackPos = -1
+			a.queueCursor = 0
+			a.queueScrollOffset = 0
+			a.saveQueue()
+			a.player.Stop()
+			a.nowPlaying.track = nil
+			a.activePlaylist = ""
+			return a.withStatus("Queue cleared"), nil
+		case "history":
+			if a.recent != nil {
+				a.recent.Tracks = nil
+				a.recent.Save()
+				a.recentCursor = 0
+				a.recentScrollOffset = 0
+			}
+			return a.withStatus("History cleared"), nil
+		default:
+			return a.withStatus("Usage: clear queue|history"), nil
+		}
 	case "vol", "volume":
 		if len(args) > 0 {
 			v, err := strconv.Atoi(args[0])

@@ -46,7 +46,7 @@ func (s *RecentStore) Add(track types.Track) {
 	if len(s.Tracks) > maxRecent {
 		s.Tracks = s.Tracks[:maxRecent]
 	}
-	s.save()
+	s.Save()
 }
 
 // List returns the tracks slice (most recent first).
@@ -54,7 +54,7 @@ func (s *RecentStore) List() []types.Track {
 	return s.Tracks
 }
 
-func (s *RecentStore) save() {
+func (s *RecentStore) Save() {
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return
