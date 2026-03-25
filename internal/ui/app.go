@@ -107,6 +107,7 @@ type App struct {
 	filteredIndices  []int
 	showRemaining    bool
 	showLineNumbers  bool
+	showPlayCounts   bool
 	audioInfo        string
 }
 
@@ -1174,6 +1175,12 @@ func (a App) execCommand(input string) (App, tea.Cmd) {
 			return a.withStatus("Line numbers on"), nil
 		}
 		return a.withStatus("Line numbers off"), nil
+	case "playcounts":
+		a.showPlayCounts = !a.showPlayCounts
+		if a.showPlayCounts {
+			return a.withStatus("Play counts on"), nil
+		}
+		return a.withStatus("Play counts off"), nil
 	case "play", "p":
 		if len(args) > 0 {
 			// :play N — play track at line N
@@ -1867,7 +1874,7 @@ func (a App) renderQueueView() string {
 
 		// Play count suffix
 		playCountSuffix := ""
-		if a.playCounts != nil {
+		if a.showPlayCounts && a.playCounts != nil {
 			if cnt := a.playCounts.Get(t.ID); cnt > 0 {
 				playCountSuffix = dimStyle.Render(fmt.Sprintf(" ×%d", cnt))
 			}
