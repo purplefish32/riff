@@ -511,6 +511,22 @@ func (a App) updateSearchBrowse(msg tea.KeyMsg) (App, tea.Cmd) {
 			a.mode = modeNormal
 		}
 		return a, nil
+	case "tab", "]":
+		tabs := []viewTab{tabQueue, tabDownloads, tabPlaylists}
+		next := tabs[(int(a.activeTab)+1)%len(tabs)]
+		a, ok := a.switchTab(next)
+		if ok {
+			a.mode = modeNormal
+		}
+		return a, nil
+	case "shift+tab", "[":
+		tabs := []viewTab{tabQueue, tabDownloads, tabPlaylists}
+		prev := tabs[(int(a.activeTab)+len(tabs)-1)%len(tabs)]
+		a, ok := a.switchTab(prev)
+		if ok {
+			a.mode = modeNormal
+		}
+		return a, nil
 	case "?":
 		a.mode = modeHelp
 		return a, nil
@@ -727,6 +743,22 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 		return a, nil
 	case "3":
 		a, ok := a.switchTab(tabPlaylists)
+		if ok {
+			a.saveUIState()
+		}
+		return a, nil
+	case "tab", "]":
+		tabs := []viewTab{tabQueue, tabDownloads, tabPlaylists}
+		next := tabs[(int(a.activeTab)+1)%len(tabs)]
+		a, ok := a.switchTab(next)
+		if ok {
+			a.saveUIState()
+		}
+		return a, nil
+	case "shift+tab", "[":
+		tabs := []viewTab{tabQueue, tabDownloads, tabPlaylists}
+		prev := tabs[(int(a.activeTab)+len(tabs)-1)%len(tabs)]
+		a, ok := a.switchTab(prev)
 		if ok {
 			a.saveUIState()
 		}
