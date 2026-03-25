@@ -494,22 +494,26 @@ func (a App) updateSearchBrowse(msg tea.KeyMsg) (App, tea.Cmd) {
 		a.search.resetHistoryIndex()
 		return a, nil
 	case "1":
-		if a, ok := a.switchTab(tabQueue); ok {
+		a, ok := a.switchTab(tabQueue)
+		if ok {
 			a.mode = modeNormal
 		}
 		return a, nil
 	case "2":
-		if a, ok := a.switchTab(tabLiked); ok {
+		a, ok := a.switchTab(tabLiked)
+		if ok {
 			a.mode = modeNormal
 		}
 		return a, nil
 	case "3":
-		if a, ok := a.switchTab(tabDownloads); ok {
+		a, ok := a.switchTab(tabDownloads)
+		if ok {
 			a.mode = modeNormal
 		}
 		return a, nil
 	case "4":
-		if a, ok := a.switchTab(tabPlaylists); ok {
+		a, ok := a.switchTab(tabPlaylists)
+		if ok {
 			a.mode = modeNormal
 		}
 		return a, nil
@@ -698,22 +702,26 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 		a.mode = modeHelp
 		return a, nil
 	case "1":
-		if a, ok := a.switchTab(tabQueue); ok {
+		a, ok := a.switchTab(tabQueue)
+		if ok {
 			a.saveUIState()
 		}
 		return a, nil
 	case "2":
-		if a, ok := a.switchTab(tabLiked); ok {
+		a, ok := a.switchTab(tabLiked)
+		if ok {
 			a.saveUIState()
 		}
 		return a, nil
 	case "3":
-		if a, ok := a.switchTab(tabDownloads); ok {
+		a, ok := a.switchTab(tabDownloads)
+		if ok {
 			a.saveUIState()
 		}
 		return a, nil
 	case "4":
-		if a, ok := a.switchTab(tabPlaylists); ok {
+		a, ok := a.switchTab(tabPlaylists)
+		if ok {
 			a.saveUIState()
 		}
 		return a, nil
@@ -1927,9 +1935,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else {
 					target = tabPlaylists
 				}
-				if a, ok := a.switchTab(target); ok {
+				a, ok := a.switchTab(target)
+				if ok {
 					a.saveUIState()
-					_ = a
 				}
 			} else if msg.Y >= 5 {
 				// Content area starts around row 5 (header row 4, then tracks)
