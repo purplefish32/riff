@@ -1118,7 +1118,7 @@ func (a App) renderTabBar() string {
 			label += fmt.Sprintf(" [%d sel]", selCount)
 		}
 		if !dimmedAll && t.tab == a.activeTab {
-			parts = append(parts, selectedStyle.Render(" "+label+" "))
+			parts = append(parts, activeTabStyle.Render(" "+label+" "))
 		} else {
 			parts = append(parts, dimStyle.Render(" "+label+" "))
 		}
