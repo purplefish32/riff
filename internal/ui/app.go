@@ -1170,8 +1170,8 @@ func (a App) renderQueueView() string {
 			marker = playingStyle.Render("♫")
 			numSt, artSt, albSt, titSt, durSt = playingStyle, playingStyle, playingStyle, playingStyle, playingStyle
 		case isCursor:
-			marker = titleStyle.Render("▸")
-			numSt, artSt, albSt, titSt, durSt = selectedStyle, selectedStyle, selectedStyle, selectedStyle, selectedStyle
+			marker = selectionStripe.Render("▸")
+			numSt, artSt, albSt, titSt, durSt = normalStyle.Bold(true), normalStyle.Bold(true), normalStyle.Bold(true), normalStyle.Bold(true), normalStyle.Bold(true)
 		case played:
 			marker = " "
 			numSt, artSt, albSt, titSt, durSt = dimStyle, dimStyle, dimStyle, dimStyle, dimStyle
@@ -1207,7 +1207,6 @@ func (a App) renderQueueView() string {
 		s += dimStyle.Render(fmt.Sprintf("  v %d more below", len(a.tracklist)-end)) + "\n"
 	}
 
-	s += "\n" + dimStyle.Render("  enter play  x remove  / search")
 	return s
 }
 
