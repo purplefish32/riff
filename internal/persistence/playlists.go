@@ -4,13 +4,10 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/purplefish32/riff/internal/types"
 )
-
-var validPlaylistName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 // PlaylistStore manages named playlists in ~/.config/riff/playlists/.
 // Each playlist is a JSON file: playlists/<name>.json containing []Track.
@@ -25,12 +22,20 @@ func NewPlaylistStore() *PlaylistStore {
 	return &PlaylistStore{dir: dir}
 }
 
-// sanitizeName returns the sanitized name or empty string if invalid.
+// sanitizeName cleans the name for use as a filename.
+// Converts spaces to dashes, strips invalid characters.
 func sanitizeName(name string) string {
-	if !validPlaylistName.MatchString(name) {
-		return ""
+	name = strings.TrimSpace(name)
+	name = strings.ReplaceAll(name, " ", "-")
+	name = strings.ToLower(name)
+	// Strip anything not alphanumeric, dash, or underscore
+	var clean strings.Builder
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+			clean.WriteRune(r)
+		}
 	}
-	return name
+	return clean.String()
 }
 
 func (s *PlaylistStore) Save(name string, tracks []types.Track) error {
