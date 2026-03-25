@@ -158,7 +158,11 @@ func (p *Player) command(args ...any) (*ipcResponse, error) {
 
 func (p *Player) Play(url string) error {
 	_, err := p.command("loadfile", url, "replace")
-	return err
+	if err != nil {
+		return err
+	}
+	p.command("set_property", "pause", false)
+	return nil
 }
 
 func (p *Player) TogglePause() error {
