@@ -335,23 +335,23 @@ func trackRow(i int, track types.Track, selected bool, liked bool, downloaded bo
 	// Ultra-narrow: title only
 	if tc.artist == 0 {
 		if selected {
-			return titleStyle.Render("▸") + icons + col(track.Title, tc.title, selectedStyle)
+			return selectionStripe.Render("▸") + icons + col(track.Title, tc.title, normalStyle.Bold(true))
 		}
 		return " " + icons + col(track.Title, tc.title, normalStyle)
 	}
 
 	if selected {
-		s := titleStyle.Render("▸") + icons +
-			colRight(num, colNum, selectedStyle) +
-			col(track.Artist.Name, tc.artist, selectedStyle) +
-			col(track.Title, tc.title, selectedStyle)
+		s := selectionStripe.Render("▸") + icons +
+			colRight(num, colNum, dimStyle.Bold(true)) +
+			col(track.Artist.Name, tc.artist, artistStyle.Bold(true)) +
+			col(track.Title, tc.title, normalStyle.Bold(true))
 		if tc.showAlbum {
-			s += col(track.Album.Title, tc.album, selectedStyle)
+			s += col(track.Album.Title, tc.album, dimStyle.Bold(true))
 		}
 		if tc.showYear {
-			s += colRight(trackYear(track), colYear, selectedStyle)
+			s += colRight(trackYear(track), colYear, dimStyle.Bold(true))
 		}
-		s += colRight(duration, colDuration, selectedStyle)
+		s += colRight(duration, colDuration, dimStyle.Bold(true))
 		return s
 	}
 
@@ -389,11 +389,11 @@ func albumRow(i int, album types.AlbumFull, selected bool, ac albumCols) string 
 	tracks := fmt.Sprintf("%d", album.NumberOfTracks)
 
 	if selected {
-		return titleStyle.Render("▸ ") +
-			col(album.Title, ac.title, selectedStyle) +
-			col(artist, ac.artist, selectedStyle) +
-			colRight(year, colYear, selectedStyle) +
-			colRight(tracks, colTracks, selectedStyle)
+		return selectionStripe.Render("▸ ") +
+			col(album.Title, ac.title, normalStyle.Bold(true)) +
+			col(artist, ac.artist, artistStyle.Bold(true)) +
+			colRight(year, colYear, dimStyle.Bold(true)) +
+			colRight(tracks, colTracks, dimStyle.Bold(true))
 	}
 
 	return "  " +
@@ -421,9 +421,9 @@ func artistRow(i int, artist types.ArtistFull, selected bool, width int) string 
 	num := fmt.Sprintf("%d", i+1)
 
 	if selected {
-		return titleStyle.Render("▸ ") +
-			col(num, colNum, selectedStyle) +
-			col(artist.Name, w, selectedStyle)
+		return selectionStripe.Render("▸ ") +
+			col(num, colNum, dimStyle.Bold(true)) +
+			col(artist.Name, w, artistStyle.Bold(true))
 	}
 
 	return "  " +
