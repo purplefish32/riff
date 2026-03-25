@@ -130,10 +130,14 @@ func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedS
 	if likedCursor < 0 {
 		likedCursor = 0
 	}
+	sm := newSearchModel()
+	if mode == modeSearchInput {
+		sm.input.Focus()
+	}
 	return App{
 		mode:        mode,
 		activeTab:   viewTab(qs.ActiveTab),
-		search:      newSearchModel(),
+		search:      sm,
 		nowPlaying:  newNowPlayingModel(),
 		client:      client,
 		player:      player,
