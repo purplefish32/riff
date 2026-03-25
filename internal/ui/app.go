@@ -73,6 +73,7 @@ const (
 	modeSavePlaylist                    // save playlist popup
 	modeRenamePlaylist                  // rename playlist popup
 	modeAddToPlaylist                   // pick playlist to add track to
+	modeConfirmDelete                   // confirm playlist deletion
 )
 
 type App struct {
@@ -133,7 +134,7 @@ type App struct {
 	addToPickerNames []string
 	addToPickerIdx   int
 	addToCreating    bool
-	pendingDelete    bool
+	deleteTarget     string
 }
 
 func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedStore, dl *downloader.Downloader, cfg *persistence.Config, qs *persistence.QueueStore, pc *persistence.PlayCountStore, ps *persistence.PlaylistStore) App {
@@ -721,10 +722,6 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 	if msg.String() != "g" && a.pendingG {
 		a.pendingG = false
 	}
-	// Clear pending delete on any non-x key
-	if msg.String() != "x" && a.pendingDelete {
-		a.pendingDelete = false
-	}
 	switch msg.String() {
 	case "ctrl+c", "q":
 		return a, tea.Quit
@@ -837,19 +834,8 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 		return a, nil
 	case "x":
 		if a.activeTab == tabPlaylists && len(a.playlistNames) > 0 {
-			name := a.playlistNames[a.playlistCursor]
-			if a.pendingDelete {
-				a.pendingDelete = false
-				a.playlists.Delete(name)
-				a = a.refreshPlaylists()
-				if a.playlistCursor >= len(a.playlistNames) && a.playlistCursor > 0 {
-					a.playlistCursor--
-				}
-				a = a.withStatus(fmt.Sprintf("Deleted: %s", name))
-			} else {
-				a.pendingDelete = true
-				a = a.withStatus(fmt.Sprintf("Press x again to delete: %s", name))
-			}
+			a.deleteTarget = a.playlistNames[a.playlistCursor]
+			a.mode = modeConfirmDelete
 			return a, nil
 		}
 		if a.activeTab != tabQueue || len(a.tracklist) == 0 {
@@ -1712,6 +1698,26 @@ func (a App) updateSavePlaylist(msg tea.KeyMsg) (App, tea.Cmd) {
 	return a, cmd
 }
 
+func (a App) updateConfirmDelete(msg tea.KeyMsg) (App, tea.Cmd) {
+	switch msg.String() {
+	case "y", "enter":
+		a.playlists.Delete(a.deleteTarget)
+		a = a.refreshPlaylists()
+		if a.playlistCursor >= len(a.playlistNames) && a.playlistCursor > 0 {
+			a.playlistCursor--
+		}
+		a = a.withStatus(fmt.Sprintf("Deleted: %s", a.deleteTarget))
+		a.deleteTarget = ""
+		a.mode = modeNormal
+		return a, nil
+	case "n", "esc":
+		a.deleteTarget = ""
+		a.mode = modeNormal
+		return a, nil
+	}
+	return a, nil
+}
+
 func (a App) updateAddToPlaylist(msg tea.KeyMsg) (App, tea.Cmd) {
 	// Creating new playlist: text input mode
 	if a.addToCreating {
@@ -2151,6 +2157,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case modeAddToPlaylist:
 			a, cmd := a.updateAddToPlaylist(msg)
 			return a, cmd
+		case modeConfirmDelete:
+			a, cmd := a.updateConfirmDelete(msg)
+			return a, cmd
 		default:
 			a, cmd := a.updateNormal(msg)
 			return a, cmd
@@ -2289,7 +2298,7 @@ func (a App) renderTabBar() string {
 	}
 	tabs = append(tabs, tabEntry{plLabel, tabPlaylists})
 
-	dimmedAll := a.searchVisible() || a.mode == modeHelp || a.mode == modeFilter || a.mode == modeSavePlaylist || a.mode == modeRenamePlaylist || a.mode == modeAddToPlaylist
+	dimmedAll := a.searchVisible() || a.mode == modeHelp || a.mode == modeFilter || a.mode == modeSavePlaylist || a.mode == modeRenamePlaylist || a.mode == modeAddToPlaylist || a.mode == modeConfirmDelete
 
 	selCount := len(a.selected)
 	var parts []string
@@ -2693,6 +2702,19 @@ func (a App) View() string {
 			)
 		}
 
+	case a.mode == modeConfirmDelete:
+		confirmContent := titleStyle.Render("Delete playlist?") + "\n\n" +
+			normalStyle.Render(fmt.Sprintf("  \"%s\" will be permanently deleted.", a.deleteTarget)) + "\n\n" +
+			dimStyle.Render("  y/enter confirm    n/esc cancel")
+		confirmPopup := overlayBorder.Padding(1, 2).Render(confirmContent)
+		if noColor {
+			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, confirmPopup)
+		} else {
+			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, confirmPopup,
+				lipgloss.WithWhitespaceBackground(lipgloss.Color("#0D0D0D")),
+			)
+		}
+
 	case a.mode == modeAddToPlaylist:
 		title := "Add to playlist"
 		if a.addToTrack != nil {
@@ -2825,6 +2847,8 @@ func (a App) contextHelp() string {
 		return dimStyle.Render("  enter rename  esc cancel")
 	case modeAddToPlaylist:
 		return dimStyle.Render("  ↑↓ select  enter add  esc cancel")
+	case modeConfirmDelete:
+		return dimStyle.Render("  y/enter confirm  n/esc cancel")
 	default:
 		switch a.activeTab {
 		case tabLiked:
