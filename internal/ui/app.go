@@ -359,6 +359,7 @@ func (a App) updateSearchInput(msg tea.KeyMsg) (App, tea.Cmd) {
 		if query == a.search.lastQuery && a.search.mode == a.search.lastMode {
 			return a, nil
 		}
+		a.search.addToHistory(query)
 		a.search.loading = true
 		a.search.lastQuery = query
 		a.search.lastMode = a.search.mode
@@ -397,6 +398,7 @@ func (a App) updateSearchBrowse(msg tea.KeyMsg) (App, tea.Cmd) {
 	case "/":
 		a.mode = modeSearchInput
 		a.search.input.Focus()
+		a.search.resetHistoryIndex()
 		return a, nil
 	case "1":
 		a.activeTab = tabQueue
@@ -562,6 +564,7 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 	case "/":
 		a.mode = modeSearchInput
 		a.search.input.Focus()
+		a.search.resetHistoryIndex()
 		return a, nil
 	case "?":
 		a.mode = modeHelp

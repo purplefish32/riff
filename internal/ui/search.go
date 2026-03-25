@@ -19,17 +19,19 @@ const (
 )
 
 type searchModel struct {
-	input       textinput.Model
-	mode        searchMode
-	results     []types.Track
-	albums      []types.AlbumFull
-	artists     []types.ArtistFull
-	albumTracks []types.Track
-	albumTitle  string
-	cursor      int
-	loading     bool
-	lastQuery   string
-	lastMode    searchMode
+	input         textinput.Model
+	mode          searchMode
+	results       []types.Track
+	albums        []types.AlbumFull
+	artists       []types.ArtistFull
+	albumTracks   []types.Track
+	albumTitle    string
+	cursor        int
+	loading       bool
+	lastQuery     string
+	lastMode      searchMode
+	searchHistory []string
+	historyIdx    int
 }
 
 type searchResultMsg struct {
@@ -63,15 +65,64 @@ func newSearchModel() searchModel {
 	return searchModel{input: ti}
 }
 
+const maxSearchHistory = 20
+
+// addToHistory appends query to searchHistory, keeping at most maxSearchHistory entries.
+func (m *searchModel) addToHistory(query string) {
+	if query == "" {
+		return
+	}
+	// Avoid duplicates: remove existing entry if present
+	for i, h := range m.searchHistory {
+		if h == query {
+			m.searchHistory = append(m.searchHistory[:i], m.searchHistory[i+1:]...)
+			break
+		}
+	}
+	m.searchHistory = append(m.searchHistory, query)
+	if len(m.searchHistory) > maxSearchHistory {
+		m.searchHistory = m.searchHistory[len(m.searchHistory)-maxSearchHistory:]
+	}
+	m.historyIdx = len(m.searchHistory)
+}
+
+// resetHistoryIndex sets historyIdx to len(searchHistory) (past-the-end sentinel).
+func (m *searchModel) resetHistoryIndex() {
+	m.historyIdx = len(m.searchHistory)
+}
+
 func (m searchModel) Update(msg tea.Msg) (searchModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "up", "k":
+			if m.input.Focused() {
+				// Recall previous history entry
+				if len(m.searchHistory) > 0 && m.historyIdx > 0 {
+					m.historyIdx--
+					m.input.SetValue(m.searchHistory[m.historyIdx])
+					m.input.CursorEnd()
+				}
+				return m, nil
+			}
 			if m.cursor > 0 {
 				m.cursor--
 			}
 		case "down", "j":
+			if m.input.Focused() {
+				// Recall next history entry or clear input
+				if len(m.searchHistory) > 0 {
+					m.historyIdx++
+					if m.historyIdx >= len(m.searchHistory) {
+						m.historyIdx = len(m.searchHistory)
+						m.input.SetValue("")
+					} else {
+						m.input.SetValue(m.searchHistory[m.historyIdx])
+						m.input.CursorEnd()
+					}
+				}
+				return m, nil
+			}
 			max := m.listLen() - 1
 			if m.cursor < max {
 				m.cursor++
