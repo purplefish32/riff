@@ -40,6 +40,10 @@ func NewLikedStore() (*LikedStore, error) {
 		s.ids[t.ID] = true
 	}
 
+	if len(s.Tracks) > 0 {
+		s.syncPlaylist()
+	}
+
 	return s, nil
 }
 
@@ -75,4 +79,21 @@ func (s *LikedStore) save() {
 		return
 	}
 	os.WriteFile(s.path, data, 0o644)
+	s.syncPlaylist()
+}
+
+// syncPlaylist writes liked tracks to playlists/liked.json
+// so liked tracks appear as a loadable playlist.
+func (s *LikedStore) syncPlaylist() {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return
+	}
+	dir := filepath.Join(configDir, "riff", "playlists")
+	os.MkdirAll(dir, 0o755)
+	data, err := json.MarshalIndent(s.Tracks, "", "  ")
+	if err != nil {
+		return
+	}
+	os.WriteFile(filepath.Join(dir, "liked.json"), data, 0o644)
 }
