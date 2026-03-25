@@ -1686,13 +1686,15 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.spinnerIdx = (a.spinnerIdx + 1) % len(spinnerFrames)
 		// Animate VU meter from real audio levels (every tick = 100ms)
 		if a.nowPlaying.track != nil && !a.nowPlaying.paused {
-			db := a.player.GetAudioLevel()
-			base := dbToLevel(db, 1.0)
-			// Symmetric arc: center highest, outer scaled down
-			scales := [5]float64{0.5, 0.8, 1.0, 0.8, 0.5}
-			for i := range a.vuLevels {
-				a.vuLevels[i] = int(float64(base) * scales[i])
-			}
+			left, right := a.player.GetAudioLevels()
+			l := dbToLevel(left, 1.0)
+			r := dbToLevel(right, 1.0)
+			mid := (l + r) / 2
+			a.vuLevels[0] = l * 6 / 10       // left, scaled down
+			a.vuLevels[1] = l                  // left full
+			a.vuLevels[2] = mid                // center
+			a.vuLevels[3] = r                  // right full
+			a.vuLevels[4] = r * 6 / 10        // right, scaled down
 		} else {
 			for i := range a.vuLevels {
 				if a.vuLevels[i] > 0 {

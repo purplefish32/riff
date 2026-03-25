@@ -218,23 +218,30 @@ func (p *Player) GetSampleRate() (int, error) {
 	return int(rate), nil
 }
 
-// GetAudioLevel returns the overall RMS level in dB.
-// Returns -100 on error or when nothing is playing.
-func (p *Player) GetAudioLevel() float64 {
-	// Try overall level first
-	resp, err := p.command("get_property", "af-metadata/lavfi.astats.Overall.RMS_level")
-	if err != nil {
-		return -100
-	}
-	switch v := resp.Data.(type) {
-	case string:
-		if f, err := strconv.ParseFloat(v, 64); err == nil {
-			return f
+// GetAudioLevels returns RMS levels for left and right channels in dB.
+func (p *Player) GetAudioLevels() (left, right float64) {
+	left, right = -100, -100
+	for _, ch := range []struct {
+		prop string
+		out  *float64
+	}{
+		{"af-metadata/lavfi.astats.1.RMS_level", &left},
+		{"af-metadata/lavfi.astats.2.RMS_level", &right},
+	} {
+		resp, err := p.command("get_property", ch.prop)
+		if err != nil {
+			continue
 		}
-	case float64:
-		return v
+		switch v := resp.Data.(type) {
+		case string:
+			if f, err := strconv.ParseFloat(v, 64); err == nil {
+				*ch.out = f
+			}
+		case float64:
+			*ch.out = v
+		}
 	}
-	return -100
+	return
 }
 
 // WaitForEnd blocks until the current track finishes.
