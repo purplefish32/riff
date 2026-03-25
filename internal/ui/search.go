@@ -151,7 +151,7 @@ func (m searchModel) listLen() int {
 // Fixed column widths
 const (
 	colLike     = 2
-	colNum      = 4
+	colNum      = 5
 	colDuration = 6
 	colYear     = 8
 	colTracks   = 8
