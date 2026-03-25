@@ -103,6 +103,7 @@ type App struct {
 	filterText       string
 	filteredIndices  []int
 	showRemaining    bool
+	audioInfo        string
 }
 
 func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedStore, dl *downloader.Downloader, cfg *persistence.Config, qs *persistence.QueueStore) App {
@@ -198,6 +199,7 @@ func (a App) playPos(pos int) (App, tea.Cmd) {
 	}
 	a.playGen++
 	a.trackPos = pos
+	a.audioInfo = ""
 	a.queueStore.Save(a.tracklist, a.trackPos)
 	track := &a.tracklist[pos]
 	a.nowPlaying.track = track
@@ -291,6 +293,7 @@ func (a App) stopPlayback() App {
 	a.nowPlaying.paused = false
 	a.nowPlaying.position = 0
 	a.nowPlaying.duration = 0
+	a.audioInfo = ""
 	return a
 }
 
@@ -304,6 +307,7 @@ func (a App) syncNowPlaying() App {
 	a.nowPlaying.quality = qualities[a.quality]
 	a.nowPlaying.volume = a.volume
 	a.nowPlaying.showRemaining = a.showRemaining
+	a.nowPlaying.audioInfo = a.audioInfo
 	if a.nowPlaying.track != nil {
 		a.nowPlaying.liked = a.likes.IsLiked(a.nowPlaying.track.ID)
 	}
@@ -1336,6 +1340,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if err == nil {
 					a.nowPlaying.position = pos
 					a.nowPlaying.duration = dur
+				}
+			}
+			// Fetch audio format/rate once per track
+			if a.nowPlaying.track != nil && a.audioInfo == "" {
+				format, err1 := a.player.GetAudioFormat()
+				rate, err2 := a.player.GetSampleRate()
+				if err1 == nil && err2 == nil && format != "" && rate > 0 {
+					a.audioInfo = fmt.Sprintf("%s %dkHz", strings.ToUpper(format), rate/1000)
 				}
 			}
 			// Re-ping every 100 ticks (~10 seconds) when offline

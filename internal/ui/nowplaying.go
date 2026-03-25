@@ -16,6 +16,7 @@ type nowPlayingModel struct {
 	duration      float64
 	quality       string
 	volume        int
+	audioInfo     string
 	progress      progress.Model
 	showRemaining bool
 }
@@ -52,7 +53,9 @@ func (m nowPlayingModel) View(width int) string {
 		artistStyle.Render(m.track.Artist.Name),
 		dimStyle.Render(m.track.Album.Title),
 	}
-	if m.quality != "" {
+	if m.audioInfo != "" {
+		parts = append(parts, dimStyle.Render(m.audioInfo))
+	} else if m.quality != "" {
 		parts = append(parts, dimStyle.Render(m.quality))
 	}
 	if m.liked {
