@@ -2,8 +2,10 @@ package ui
 
 import (
 	"fmt"
+	"math/rand"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -60,6 +62,7 @@ const (
 	modeSearchBrowse                  // navigating search results
 	modeHelp                          // help overlay
 	modeFilter                        // inline filter on queue/liked
+	modeCommand                       // vim-style : command line
 )
 
 type App struct {
@@ -98,10 +101,12 @@ type App struct {
 	statusMsg        string
 	statusTicks      int // ticks remaining before status clears
 	pendingG         bool
+	cmdInput         textinput.Model
 	filterInput      textinput.Model
 	filterText       string
 	filteredIndices  []int
 	showRemaining    bool
+	showLineNumbers  bool
 	audioInfo        string
 }
 
@@ -143,6 +148,7 @@ func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedS
 		queueCursor: queueCursor,
 		likedCursor: likedCursor,
 		selected:    make(map[int]bool),
+		cmdInput:    newCmdInput(),
 		online:      true,
 
 		filterInput: newFilterInput(),
@@ -156,6 +162,15 @@ func newFilterInput() textinput.Model {
 	ti.Prompt = "Filter: "
 	ti.CharLimit = 50
 	ti.Width = 30
+	return ti
+}
+
+func newCmdInput() textinput.Model {
+	ti := textinput.New()
+	ti.Placeholder = ""
+	ti.Prompt = ":"
+	ti.CharLimit = 50
+	ti.Width = 40
 	return ti
 }
 
@@ -1070,10 +1085,119 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 			a = a.withStatus("Jumped to now playing")
 		}
 		return a, nil
+	case ":":
+		a.mode = modeCommand
+		a.cmdInput.Reset()
+		a.cmdInput.Focus()
+		return a, nil
 	}
 	return a, nil
 }
 
+func (a App) execCommand(input string) (App, tea.Cmd) {
+	parts := strings.Fields(input)
+	if len(parts) == 0 {
+		return a, nil
+	}
+	cmd := parts[0]
+	args := parts[1:]
+
+	switch cmd {
+	case "q", "quit":
+		return a, tea.Quit
+	case "w", "write":
+		a.saveQueue()
+		return a.withStatus("Queue saved"), nil
+	case "shuffle":
+		if len(a.tracklist) > 1 {
+			rand.Shuffle(len(a.tracklist), func(i, j int) {
+				a.tracklist[i], a.tracklist[j] = a.tracklist[j], a.tracklist[i]
+			})
+			a.trackPos = -1
+			a.queueCursor = 0
+			a.queueScrollOffset = 0
+			a.saveQueue()
+			return a.withStatus("Queue shuffled"), nil
+		}
+		return a, nil
+	case "clear":
+		a.tracklist = nil
+		a.trackPos = -1
+		a.queueCursor = 0
+		a.queueScrollOffset = 0
+		a.saveQueue()
+		a.player.Stop()
+		a.nowPlaying.track = nil
+		return a.withStatus("Queue cleared"), nil
+	case "vol", "volume":
+		if len(args) > 0 {
+			v, err := strconv.Atoi(args[0])
+			if err == nil {
+				a = a.adjustVolume(v - a.volume)
+				return a.withStatus(fmt.Sprintf("Volume: %d%%", a.volume)), nil
+			}
+		}
+		return a.withStatus(fmt.Sprintf("Volume: %d%%", a.volume)), nil
+	case "goto":
+		if len(args) > 0 {
+			line, err := strconv.Atoi(args[0])
+			if err == nil && line >= 1 {
+				idx := line - 1
+				if a.activeTab == tabQueue {
+					if idx >= len(a.tracklist) {
+						idx = len(a.tracklist) - 1
+					}
+					a.queueCursor = idx
+					visibleRows := a.height - 12
+					if visibleRows < 1 {
+						visibleRows = 1
+					}
+					if a.queueCursor < a.queueScrollOffset {
+						a.queueScrollOffset = a.queueCursor
+					}
+					if a.queueCursor >= a.queueScrollOffset+visibleRows {
+						a.queueScrollOffset = a.queueCursor - visibleRows + 1
+					}
+				} else if a.activeTab == tabLiked {
+					if idx >= len(a.likes.Tracks) {
+						idx = len(a.likes.Tracks) - 1
+					}
+					a.likedCursor = idx
+				}
+				return a.withStatus(fmt.Sprintf("Line %d", line)), nil
+			}
+		}
+		return a.withStatus("Usage: goto <number>"), nil
+	case "lines":
+		a.showLineNumbers = !a.showLineNumbers
+		if a.showLineNumbers {
+			return a.withStatus("Line numbers on"), nil
+		}
+		return a.withStatus("Line numbers off"), nil
+	default:
+		// Try as a number (":42" = goto 42)
+		if n, err := strconv.Atoi(cmd); err == nil && n >= 1 {
+			return a.execCommand("goto " + cmd)
+		}
+		return a.withStatus(fmt.Sprintf("Unknown command: %s", cmd)), nil
+	}
+}
+
+func (a App) updateCommand(msg tea.KeyMsg) (App, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		a.cmdInput.Blur()
+		a.mode = modeNormal
+		return a, nil
+	case "enter":
+		a.cmdInput.Blur()
+		a.mode = modeNormal
+		return a.execCommand(a.cmdInput.Value())
+	}
+	var cmd tea.Cmd
+	a.cmdInput, cmd = a.cmdInput.Update(msg)
+	return a, cmd
+}
 
 // computeFilteredIndices builds the filteredIndices slice based on filterText
 // and the current tab. Call this any time filterText or the underlying list changes.
@@ -1389,6 +1513,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case modeFilter:
 			a, cmd := a.updateFilter(msg)
 			return a, cmd
+		case modeCommand:
+			a, cmd := a.updateCommand(msg)
+			return a, cmd
 		default:
 			a, cmd := a.updateNormal(msg)
 			return a, cmd
@@ -1561,7 +1688,21 @@ func (a App) renderQueueView() string {
 	if a.mode == modeFilter {
 		s += "  " + a.filterInput.View() + "\n"
 	}
-	s += trackHeader(tc) + "\n"
+	// Queue header (respects showLineNumbers)
+	qh := "   "
+	if a.showLineNumbers {
+		qh += colRight("#", colNum, headerStyle)
+	}
+	qh += col("Artist", tc.artist, headerStyle) +
+		col("Title", tc.title, headerStyle)
+	if tc.showAlbum {
+		qh += col("Album", tc.album, headerStyle)
+	}
+	if tc.showYear {
+		qh += colRight("Year", colYear, headerStyle)
+	}
+	qh += colRight("Time", colDuration, headerStyle)
+	s += qh + "\n"
 
 	end := a.queueScrollOffset + visibleRows
 	if end > len(a.tracklist) {
@@ -1632,9 +1773,11 @@ func (a App) renderQueueView() string {
 			// Ultra-narrow: title only
 			row = marker + icons + col(titleText, tc.title, titSt) + playCountSuffix
 		} else {
-			row = marker + icons +
-				colRight(num, colNum, numSt) +
-				col(t.Artist.Name, tc.artist, artSt) +
+			row = marker + icons
+			if a.showLineNumbers {
+				row += colRight(num, colNum, numSt)
+			}
+			row +=	col(t.Artist.Name, tc.artist, artSt) +
 				col(titleText, tc.title, titSt)
 			if tc.showAlbum {
 				row += col(t.Album.Title, tc.album, albSt)
@@ -1811,8 +1954,13 @@ func (a App) View() string {
 		}
 	}
 
-	// --- Help bar ---
-	help := a.contextHelp()
+	// --- Help bar / command line ---
+	var help string
+	if a.mode == modeCommand {
+		help = "  " + a.cmdInput.View()
+	} else {
+		help = a.contextHelp()
+	}
 
 	// --- Separator lines ---
 	separator := dimStyle.Render(strings.Repeat("─", a.width))
