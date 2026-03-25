@@ -1684,23 +1684,20 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		a.tickCount++
 		a.spinnerIdx = (a.spinnerIdx + 1) % len(spinnerFrames)
-		// Animate VU meter from real audio levels (every 3rd tick = ~300ms)
+		// Animate VU meter from real audio levels (every tick = 100ms)
 		if a.nowPlaying.track != nil && !a.nowPlaying.paused {
-			if a.tickCount%3 == 0 {
-				db := a.player.GetAudioLevel()
-				base := dbToLevel(db, 1.0)
-				// Spread 5 bars around the base level with jitter
-				for i := range a.vuLevels {
-					jitter := rand.Intn(3) - 1 // -1, 0, +1
-					level := base + jitter
-					if level < 0 {
-						level = 0
-					}
-					if level > 6 {
-						level = 6
-					}
-					a.vuLevels[i] = level
+			db := a.player.GetAudioLevel()
+			base := dbToLevel(db, 1.0)
+			for i := range a.vuLevels {
+				jitter := rand.Intn(3) - 1
+				level := base + jitter
+				if level < 0 {
+					level = 0
 				}
+				if level > 6 {
+					level = 6
+				}
+				a.vuLevels[i] = level
 			}
 		} else {
 			for i := range a.vuLevels {
