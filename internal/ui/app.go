@@ -90,6 +90,7 @@ type App struct {
 	dl               *downloader.Downloader
 	config           *persistence.Config
 	queueStore       *persistence.QueueStore
+	playCounts       *persistence.PlayCountStore
 	playGen          int
 	quality          int
 	volume           int
@@ -106,7 +107,7 @@ type App struct {
 	audioInfo        string
 }
 
-func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedStore, dl *downloader.Downloader, cfg *persistence.Config, qs *persistence.QueueStore) App {
+func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedStore, dl *downloader.Downloader, cfg *persistence.Config, qs *persistence.QueueStore, pc *persistence.PlayCountStore) App {
 	mode := modeNormal
 	if len(qs.Tracks) == 0 {
 		mode = modeSearchInput
@@ -136,6 +137,7 @@ func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedS
 		dl:          dl,
 		config:      cfg,
 		queueStore:  qs,
+		playCounts:  pc,
 		tracklist:   qs.Tracks,
 		trackPos:    qs.Position,
 		quality:     cfg.QualityIndex(),
@@ -1481,6 +1483,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.gen != a.playGen {
 			return a, nil
 		}
+		// Increment play count for the track that just finished
+		if a.trackPos >= 0 && a.trackPos < len(a.tracklist) && a.playCounts != nil {
+			a.playCounts.Increment(a.tracklist[a.trackPos].ID)
+		}
 		if a.trackPos < len(a.tracklist)-1 {
 			return a.playPos(a.trackPos + 1)
 		}
@@ -1666,10 +1672,18 @@ func (a App) renderQueueView() string {
 			titleText = fmt.Sprintf("%02d. %s", t.TrackNumber, t.Title)
 		}
 
+		// Play count suffix
+		playCountSuffix := ""
+		if a.playCounts != nil {
+			if cnt := a.playCounts.Get(t.ID); cnt > 0 {
+				playCountSuffix = dimStyle.Render(fmt.Sprintf(" ×%d", cnt))
+			}
+		}
+
 		var row string
 		if tc.artist == 0 {
 			// Ultra-narrow: title only
-			row = marker + icons + col(titleText, tc.title, titSt)
+			row = marker + icons + col(titleText, tc.title, titSt) + playCountSuffix
 		} else {
 			row = marker + icons +
 				colRight(num, colNum, numSt) +
@@ -1681,7 +1695,7 @@ func (a App) renderQueueView() string {
 			if tc.showYear {
 				row += colRight(trackYear(t), colYear, durSt)
 			}
-			row += colRight(duration, colDuration, durSt)
+			row += colRight(duration, colDuration, durSt) + playCountSuffix
 		}
 		if displayIdx%2 == 1 && !isCursor && !isPlaying {
 			row = altRowBg.Width(a.width).Render(row)
@@ -1911,6 +1925,9 @@ func (a App) View() string {
 					helpLine("+/-", "Volume up/down") +
 					"\n" +
 					helpLine("j/k", "Navigate up/down") +
+					helpLine("J/K", "Move queue track down/up") +
+					helpLine("c", "Jump to now playing") +
+					helpLine("t", "Toggle elapsed/remaining time") +
 					helpLine("G / home", "Jump to last / first item") +
 					helpLine("ctrl+u/d", "Page up / page down") +
 					helpLine("f", "Filter current list") +
@@ -1979,7 +1996,7 @@ func (a App) contextHelp() string {
 		case tabDownloads:
 			return dimStyle.Render("  r retry  / search  ? help  q quit")
 		default:
-			return dimStyle.Render("  ↑↓ navigate  enter play  x remove  d download  l like  g goto  G end  home top  / search  ? help  q quit")
+			return dimStyle.Render("  ↑↓ navigate  J/K reorder  c now-playing  t time-mode  enter play  x remove  d download  l like  g goto  / search  ? help  q quit")
 		}
 	}
 }
