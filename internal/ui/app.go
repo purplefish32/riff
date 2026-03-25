@@ -1295,7 +1295,6 @@ func (a App) execCommand(input string) (App, tea.Cmd) {
 			a.queueCursor = 0
 			a.queueScrollOffset = 0
 			a.saveQueue()
-			a.activePlaylist = ""
 			return a.withStatus("Queue shuffled"), nil
 		}
 		return a, nil
