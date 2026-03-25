@@ -834,7 +834,12 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 		return a, nil
 	case "x":
 		if a.activeTab == tabPlaylists && len(a.playlistNames) > 0 {
-			a.deleteTarget = a.playlistNames[a.playlistCursor]
+			name := a.playlistNames[a.playlistCursor]
+			if name == "liked" {
+				a = a.withStatus("Cannot delete liked playlist")
+				return a, nil
+			}
+			a.deleteTarget = name
 			a.mode = modeConfirmDelete
 			return a, nil
 		}
@@ -1637,6 +1642,9 @@ func (a App) execCommand(input string) (App, tea.Cmd) {
 			return a.withStatus("Usage: delete <name>"), nil
 		}
 		name := args[0]
+		if name == "liked" {
+			return a.withStatus("Cannot delete liked playlist"), nil
+		}
 		if err := a.playlists.Delete(name); err != nil {
 			return a.withStatus(fmt.Sprintf("Delete failed: %s", err)), nil
 		}
