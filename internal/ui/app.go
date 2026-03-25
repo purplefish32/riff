@@ -54,7 +54,6 @@ type viewTab int
 
 const (
 	tabQueue viewTab = iota
-	tabDownloads
 	tabPlaylists
 )
 
@@ -500,19 +499,13 @@ func (a App) updateSearchBrowse(msg tea.KeyMsg) (App, tea.Cmd) {
 		}
 		return a, nil
 	case "2":
-		a, ok := a.switchTab(tabDownloads)
-		if ok {
-			a.mode = modeNormal
-		}
-		return a, nil
-	case "3":
 		a, ok := a.switchTab(tabPlaylists)
 		if ok {
 			a.mode = modeNormal
 		}
 		return a, nil
 	case "tab", "]":
-		tabs := []viewTab{tabQueue, tabDownloads, tabPlaylists}
+		tabs := []viewTab{tabQueue, tabPlaylists}
 		next := tabs[(int(a.activeTab)+1)%len(tabs)]
 		a, ok := a.switchTab(next)
 		if ok {
@@ -520,7 +513,7 @@ func (a App) updateSearchBrowse(msg tea.KeyMsg) (App, tea.Cmd) {
 		}
 		return a, nil
 	case "shift+tab", "[":
-		tabs := []viewTab{tabQueue, tabDownloads, tabPlaylists}
+		tabs := []viewTab{tabQueue, tabPlaylists}
 		prev := tabs[(int(a.activeTab)+len(tabs)-1)%len(tabs)]
 		a, ok := a.switchTab(prev)
 		if ok {
@@ -736,19 +729,13 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 		}
 		return a, nil
 	case "2":
-		a, ok := a.switchTab(tabDownloads)
-		if ok {
-			a.saveUIState()
-		}
-		return a, nil
-	case "3":
 		a, ok := a.switchTab(tabPlaylists)
 		if ok {
 			a.saveUIState()
 		}
 		return a, nil
 	case "tab", "]":
-		tabs := []viewTab{tabQueue, tabDownloads, tabPlaylists}
+		tabs := []viewTab{tabQueue, tabPlaylists}
 		next := tabs[(int(a.activeTab)+1)%len(tabs)]
 		a, ok := a.switchTab(next)
 		if ok {
@@ -756,7 +743,7 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 		}
 		return a, nil
 	case "shift+tab", "[":
-		tabs := []viewTab{tabQueue, tabDownloads, tabPlaylists}
+		tabs := []viewTab{tabQueue, tabPlaylists}
 		prev := tabs[(int(a.activeTab)+len(tabs)-1)%len(tabs)]
 		a, ok := a.switchTab(prev)
 		if ok {
@@ -1101,14 +1088,6 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 			a.renameInput.Focus()
 			a.mode = modeRenamePlaylist
 			return a, nil
-		}
-		if a.activeTab == tabDownloads && a.dl != nil {
-			n := a.dl.RetryFailed()
-			if n > 0 {
-				a = a.withStatus(fmt.Sprintf("Retrying %d downloads", n))
-			} else {
-				a = a.withStatus("No failed downloads to retry")
-			}
 		}
 		return a, nil
 	case "u":
@@ -1486,17 +1465,15 @@ func (a App) execCommand(input string) (App, tea.Cmd) {
 			switch args[0] {
 			case "queue", "1":
 				target = tabQueue
-			case "downloads", "2":
-				target = tabDownloads
-			case "playlists", "3":
+			case "playlists", "2":
 				target = tabPlaylists
 			default:
-				return a.withStatus("Usage: tab queue|downloads|playlists"), nil
+				return a.withStatus("Usage: tab queue|playlists"), nil
 			}
 			a, _ = a.switchTab(target)
 			return a, nil
 		}
-		return a.withStatus("Usage: tab queue|downloads|playlists"), nil
+		return a.withStatus("Usage: tab queue|playlists"), nil
 	case "help":
 		a.mode = modeHelp
 		return a, nil
@@ -1902,8 +1879,6 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				var target viewTab
 				if msg.X < 15 {
 					target = tabQueue
-				} else if msg.X < 30 {
-					target = tabDownloads
 				} else {
 					target = tabPlaylists
 				}
@@ -2104,24 +2079,10 @@ func (a App) dlCheck() func(types.Track) bool {
 	return a.dl.IsDownloaded
 }
 
-func (a App) hasDownloadActivity() bool {
-	if a.dl == nil {
-		return false
-	}
-	st := a.dl.Status()
-	return st.Active+st.Completed+st.Failed+st.Queued > 0
-}
-
 func (a App) renderTabBar() string {
 	type tabEntry struct {
 		label string
 		tab   viewTab
-	}
-	tabs := []tabEntry{
-		{"Queue", tabQueue},
-	}
-	if a.hasDownloadActivity() {
-		tabs = append(tabs, tabEntry{"Downloads", tabDownloads})
 	}
 	plLabel := "Playlists"
 	if a.playlists != nil {
@@ -2129,7 +2090,10 @@ func (a App) renderTabBar() string {
 			plLabel = fmt.Sprintf("Playlists(%d)", len(names))
 		}
 	}
-	tabs = append(tabs, tabEntry{plLabel, tabPlaylists})
+	tabs := []tabEntry{
+		{"Queue", tabQueue},
+		{plLabel, tabPlaylists},
+	}
 
 	dimmedAll := a.searchVisible() || a.mode == modeHelp || a.mode == modeFilter || a.mode == modeSavePlaylist || a.mode == modeRenamePlaylist || a.mode == modeAddToPlaylist || a.mode == modeConfirmDelete
 
@@ -2298,41 +2262,6 @@ func (a App) renderQueueView() string {
 	return s
 }
 
-
-func (a App) renderDownloadsView() string {
-	if a.dl == nil {
-		return dimStyle.Render("  Downloads not available.")
-	}
-
-	st := a.dl.Status()
-	if st.Active == 0 && st.Completed == 0 && st.Failed == 0 && st.Queued == 0 {
-		return dimStyle.Render("  No downloads yet. Press 'd' on a track or 'D' on an album.")
-	}
-
-	s := ""
-	if st.Active > 0 {
-		s += titleStyle.Render("  Downloading") + "\n"
-		if st.Current != "" {
-			s += "  " + normalStyle.Render(st.Current) + "\n"
-		}
-		s += "\n"
-	}
-	if st.Queued > 0 {
-		s += dimStyle.Render(fmt.Sprintf("  Waiting: %d", st.Queued)) + "\n"
-	}
-	if st.Completed > 0 {
-		s += dimStyle.Render(fmt.Sprintf("  Completed: %d", st.Completed)) + "\n"
-	}
-	if st.Failed > 0 {
-		failStyle := errorStyle
-		s += failStyle.Render(fmt.Sprintf("  Failed: %d", st.Failed)) + "\n"
-		if st.LastError != "" {
-			s += failStyle.Render(fmt.Sprintf("  Last error: %s", st.LastError)) + "\n"
-		}
-	}
-
-	return s
-}
 
 func (a App) renderPlaylistsView() string {
 	names := a.playlistNames
@@ -2594,8 +2523,6 @@ func (a App) View() string {
 		switch a.activeTab {
 		case tabQueue:
 			tabContent = a.renderQueueView()
-		case tabDownloads:
-			tabContent = a.renderDownloadsView()
 		case tabPlaylists:
 			tabContent = a.renderPlaylistsView()
 		}
@@ -2628,8 +2555,6 @@ func (a App) contextHelp() string {
 		return dimStyle.Render("  y/enter confirm  n/esc cancel")
 	default:
 		switch a.activeTab {
-		case tabDownloads:
-			return dimStyle.Render("  r retry  / search  ? more  q quit")
 		case tabPlaylists:
 			return dimStyle.Render("  enter load  a append  r rename  x delete  / search  ? more  q quit")
 		default:
