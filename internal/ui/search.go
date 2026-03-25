@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -384,7 +385,22 @@ func (m searchModel) View(width int, isLiked func(int) bool, isDownloaded func(t
 	s += "\n\n"
 
 	if m.loading {
-		s += dimStyle.Render("  " + spinner + " Searching...")
+		tc := computeTrackCols(width)
+		titleW := tc.title
+		if titleW < 10 {
+			titleW = 20
+		}
+		artistW := tc.artist
+		if artistW < 8 {
+			artistW = 12
+		}
+		skelTitle := strings.Repeat("─", titleW-2)
+		skelArtist := strings.Repeat("─", artistW/2)
+		skelDur := strings.Repeat("─", 4)
+		skelRow := "  " + dimStyle.Render(skelArtist) + "  " + dimStyle.Render(skelTitle) + "  " + dimStyle.Render(skelDur)
+		for i := 0; i < 5; i++ {
+			s += skelRow + "\n"
+		}
 		return s
 	}
 

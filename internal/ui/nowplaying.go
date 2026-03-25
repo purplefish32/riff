@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/progress"
 	"github.com/purplefish32/riff/internal/types"
 )
 
@@ -15,6 +16,15 @@ type nowPlayingModel struct {
 	duration float64
 	quality  string
 	volume   int
+	progress progress.Model
+}
+
+func newNowPlayingModel() nowPlayingModel {
+	prog := progress.New(
+		progress.WithGradient("#C084FC", "#38BDF8"),
+		progress.WithoutPercentage(),
+	)
+	return nowPlayingModel{progress: prog}
 }
 
 func formatTime(secs float64) string {
@@ -33,27 +43,23 @@ func (m nowPlayingModel) View(width int) string {
 		state = "⏸"
 	}
 
-	qualityLabel := ""
-	if m.quality != "" {
-		qualityLabel = "  " + dimStyle.Render(m.quality)
-	}
+	sep := dimStyle.Render(" · ")
 
-	heart := ""
-	if m.liked {
-		heart = "  " + titleStyle.Render("♥")
-	}
-
-	vol := dimStyle.Render(fmt.Sprintf("  vol:%d%%", m.volume))
-
-	info := fmt.Sprintf("  %s  %s — %s  [%s]%s%s%s",
-		state,
+	parts := []string{
+		"  " + state,
 		titleStyle.Render(m.track.Title),
 		artistStyle.Render(m.track.Artist.Name),
 		dimStyle.Render(m.track.Album.Title),
-		qualityLabel,
-		heart,
-		vol,
-	)
+	}
+	if m.quality != "" {
+		parts = append(parts, dimStyle.Render(m.quality))
+	}
+	if m.liked {
+		parts = append(parts, titleStyle.Render("♥"))
+	}
+	parts = append(parts, dimStyle.Render(fmt.Sprintf("vol:%d%%", m.volume)))
+
+	info := strings.Join(parts, sep)
 
 	// Ultra-narrow: hide progress bar entirely
 	if width < 40 {
@@ -69,21 +75,18 @@ func (m nowPlayingModel) View(width int) string {
 		barWidth = 60
 	}
 
-	progress := 0.0
+	pct := 0.0
 	if m.duration > 0 {
-		progress = m.position / m.duration
+		pct = m.position / m.duration
 	}
-	if progress > 1 {
-		progress = 1
+	if pct > 1 {
+		pct = 1
 	}
 
-	filled := int(float64(barWidth) * progress)
-	empty := barWidth - filled
-
-	bar := fmt.Sprintf("  %s %s%s %s",
+	m.progress.Width = barWidth
+	bar := fmt.Sprintf("  %s %s %s",
 		dimStyle.Render(formatTime(m.position)),
-		titleStyle.Render(strings.Repeat("━", filled)),
-		dimStyle.Render(strings.Repeat("─", empty)),
+		m.progress.ViewAs(pct),
 		dimStyle.Render(formatTime(m.duration)),
 	)
 

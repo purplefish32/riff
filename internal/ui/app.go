@@ -37,7 +37,7 @@ type queueAlbumMsg struct {
 
 var qualities = []string{"LOW", "HIGH", "LOSSLESS", "HI_RES"}
 
-var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+var spinnerFrames = []string{"▁", "▂", "▃", "▄", "▅", "▆", "▇", "█", "▇", "▆", "▅", "▄", "▃", "▂"}
 
 type tickMsg struct{}
 
@@ -119,6 +119,7 @@ func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedS
 		mode:        mode,
 		activeTab:   viewTab(qs.ActiveTab),
 		search:      newSearchModel(),
+		nowPlaying:  newNowPlayingModel(),
 		client:      client,
 		player:      player,
 		likes:       likes,
@@ -1118,7 +1119,7 @@ func (a App) renderTabBar() string {
 			label += fmt.Sprintf(" [%d sel]", selCount)
 		}
 		if !dimmedAll && t.tab == a.activeTab {
-			parts = append(parts, selectedStyle.Render(" "+label+" "))
+			parts = append(parts, activeTabStyle.Render(" "+label+" "))
 		} else {
 			parts = append(parts, dimStyle.Render(" "+label+" "))
 		}
@@ -1170,8 +1171,8 @@ func (a App) renderQueueView() string {
 			marker = playingStyle.Render("♫")
 			numSt, artSt, albSt, titSt, durSt = playingStyle, playingStyle, playingStyle, playingStyle, playingStyle
 		case isCursor:
-			marker = titleStyle.Render("▸")
-			numSt, artSt, albSt, titSt, durSt = selectedStyle, selectedStyle, selectedStyle, selectedStyle, selectedStyle
+			marker = selectionStripe.Render("▸")
+			numSt, artSt, albSt, titSt, durSt = normalStyle.Bold(true), normalStyle.Bold(true), normalStyle.Bold(true), normalStyle.Bold(true), normalStyle.Bold(true)
 		case played:
 			marker = " "
 			numSt, artSt, albSt, titSt, durSt = dimStyle, dimStyle, dimStyle, dimStyle, dimStyle
@@ -1207,7 +1208,6 @@ func (a App) renderQueueView() string {
 		s += dimStyle.Render(fmt.Sprintf("  v %d more below", len(a.tracklist)-end)) + "\n"
 	}
 
-	s += "\n" + dimStyle.Render("  enter play  x remove  / search")
 	return s
 }
 
@@ -1247,7 +1247,6 @@ func (a App) renderLikedView() string {
 		s += dimStyle.Render(fmt.Sprintf("  v %d more below", len(a.likes.Tracks)-end)) + "\n"
 	}
 
-	s += "\n" + dimStyle.Render("  enter play  a queue  l unlike")
 	return s
 }
 
@@ -1287,6 +1286,7 @@ func (a App) renderDownloadsView() string {
 }
 
 func (a App) View() string {
+	// --- Header ---
 	var header string
 	if a.height < 20 {
 		onlineSuffix := ""
@@ -1304,6 +1304,10 @@ func (a App) View() string {
 		header = logo
 	}
 
+	// --- Tab bar ---
+	tabBar := a.renderTabBar()
+
+	// --- Now playing / loading bar ---
 	spinner := spinnerFrames[a.spinnerIdx]
 	var np string
 	if a.loading {
@@ -1311,13 +1315,14 @@ func (a App) View() string {
 	} else {
 		np = a.nowPlaying.View(a.width)
 	}
-	tabBar := a.renderTabBar()
 
+	// --- Error view ---
 	errView := ""
 	if a.err != nil {
-		errView = "\n" + errorStyle.Render(fmt.Sprintf("  Error: %s", a.err))
+		errView = errorStyle.Render(fmt.Sprintf("  Error: %s", a.err))
 	}
 
+	// --- Status line ---
 	statusLine := ""
 	if a.statusMsg != "" {
 		var statusStyle lipgloss.Style
@@ -1326,12 +1331,57 @@ func (a App) View() string {
 		} else {
 			statusStyle = titleStyle
 		}
-		statusLine = "  " + statusStyle.Render(a.statusMsg) + "\n"
+		statusLine = "  " + statusStyle.Render(a.statusMsg)
 	}
-	help := dimStyle.Render("  ? help  / search  enter play  a queue  p prev  n next  space pause  s stop  q quit")
 
-	var top, bottom string
+	// --- Download status ---
+	dlStatus := ""
+	if a.dl != nil {
+		st := a.dl.Status()
+		if st.Active > 0 || st.Queued > 0 {
+			dlStatus = dimStyle.Render(fmt.Sprintf("  DL: %d active, %d queued, %d done", st.Active, st.Queued, st.Completed))
+			if st.Current != "" {
+				dlStatus += dimStyle.Render("  " + st.Current)
+			}
+		} else if st.Completed > 0 || st.Failed > 0 {
+			parts := []string{}
+			if st.Completed > 0 {
+				parts = append(parts, fmt.Sprintf("%d done", st.Completed))
+			}
+			if st.Failed > 0 {
+				parts = append(parts, fmt.Sprintf("%d failed", st.Failed))
+			}
+			dlStatus = dimStyle.Render("  DL: " + strings.Join(parts, ", "))
+		}
+	}
 
+	// --- Help bar ---
+	help := a.contextHelp()
+
+	// --- Footer (fixed bottom) ---
+	var footerParts []string
+	if statusLine != "" {
+		footerParts = append(footerParts, statusLine)
+	}
+	if dlStatus != "" {
+		footerParts = append(footerParts, dlStatus)
+	}
+	footerParts = append(footerParts, np, help)
+	footer := strings.Join(footerParts, "\n")
+
+	// --- Fixed top (header + tab bar) ---
+	topFixed := lipgloss.JoinVertical(lipgloss.Left, "", header, tabBar, "")
+
+	// --- Calculate remaining content height ---
+	topHeight := lipgloss.Height(topFixed)
+	footerHeight := lipgloss.Height(footer)
+	contentHeight := a.height - topHeight - footerHeight
+	if contentHeight < 1 {
+		contentHeight = 1
+	}
+
+	// --- Content area ---
+	var content string
 	switch {
 	case a.mode == modeHelp:
 		helpOverlay := overlayBorder.
@@ -1364,59 +1414,56 @@ func (a App) View() string {
 					helpLine("?", "Toggle this help") +
 					helpLine("q", "Quit"),
 			)
-		top = fmt.Sprintf("\n%s\n%s\n\n%s\n%s", header, tabBar, helpOverlay, dimStyle.Render("  esc to close"))
+		content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, helpOverlay)
 
 	case a.searchVisible():
 		searchOverlay := overlayBorder.
 			Padding(1, 2).
 			Width(a.width - 6).
 			Render(a.search.View(a.width-12, a.likes.IsLiked, a.dlCheck(), spinner))
-		top = fmt.Sprintf("\n%s\n%s\n\n%s\n%s%s", header, tabBar, searchOverlay, dimStyle.Render("  esc to close"), errView)
+		popup := searchOverlay
+		if errView != "" {
+			popup = lipgloss.JoinVertical(lipgloss.Left, searchOverlay, errView)
+		}
+		content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, popup)
 
 	default:
-		var content string
+		var tabContent string
 		switch a.activeTab {
 		case tabQueue:
-			content = a.renderQueueView()
+			tabContent = a.renderQueueView()
 		case tabLiked:
-			content = a.renderLikedView()
+			tabContent = a.renderLikedView()
 		case tabDownloads:
-			content = a.renderDownloadsView()
+			tabContent = a.renderDownloadsView()
 		}
-		top = fmt.Sprintf("\n%s\n%s\n\n%s%s", header, tabBar, content, errView)
+		if errView != "" {
+			tabContent = lipgloss.JoinVertical(lipgloss.Left, tabContent, errView)
+		}
+		content = lipgloss.NewStyle().Height(contentHeight).Render(tabContent)
 	}
 
-	dlStatus := ""
-	if a.dl != nil {
-		st := a.dl.Status()
-		if st.Active > 0 || st.Queued > 0 {
-			dlStatus = dimStyle.Render(fmt.Sprintf("  DL: %d active, %d queued, %d done", st.Active, st.Queued, st.Completed))
-			if st.Current != "" {
-				dlStatus += dimStyle.Render("  " + st.Current)
-			}
-			dlStatus += "\n"
-		} else if st.Completed > 0 || st.Failed > 0 {
-			parts := []string{}
-			if st.Completed > 0 {
-				parts = append(parts, fmt.Sprintf("%d done", st.Completed))
-			}
-			if st.Failed > 0 {
-				parts = append(parts, fmt.Sprintf("%d failed", st.Failed))
-			}
-			dlStatus = dimStyle.Render("  DL: "+strings.Join(parts, ", ")) + "\n"
+	return lipgloss.JoinVertical(lipgloss.Left, topFixed, content, footer)
+}
+
+func (a App) contextHelp() string {
+	switch a.mode {
+	case modeSearchInput:
+		return dimStyle.Render("  enter search  tab mode  esc close")
+	case modeSearchBrowse:
+		return dimStyle.Render("  ↑↓ navigate  enter select  a queue  d download  / new search  esc close")
+	case modeHelp:
+		return dimStyle.Render("  esc close")
+	default:
+		switch a.activeTab {
+		case tabLiked:
+			return dimStyle.Render("  ↑↓ navigate  enter play  a queue  d download  l unlike  / search  ? help  q quit")
+		case tabDownloads:
+			return dimStyle.Render("  r retry  / search  ? help  q quit")
+		default:
+			return dimStyle.Render("  ↑↓ navigate  enter play  x remove  d download  l like  / search  ? help  q quit")
 		}
 	}
-
-	bottom = statusLine + dlStatus + np + "\n" + help
-
-	topHeight := lipgloss.Height(top)
-	bottomHeight := lipgloss.Height(bottom)
-	gap := a.height - topHeight - bottomHeight
-	if gap < 1 {
-		gap = 1
-	}
-
-	return top + strings.Repeat("\n", gap) + bottom
 }
 
 func helpLine(key, desc string) string {
