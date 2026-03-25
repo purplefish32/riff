@@ -304,7 +304,6 @@ func (a App) withQueueAdd(track types.Track) App {
 	if len(a.tracklist) >= maxTracklist {
 		return a.withStatus("Queue full (500 max)")
 	}
-	a.activePlaylist = ""
 	a.tracklist = append(a.tracklist, track)
 	a.saveQueue()
 	return a.withStatus(fmt.Sprintf("Queued: %s", track.Title))
@@ -315,7 +314,6 @@ func (a App) withQueueAddAll(tracks []types.Track) App {
 	if remaining <= 0 {
 		return a.withStatus("Queue full (500 max)")
 	}
-	a.activePlaylist = ""
 	if len(tracks) > remaining {
 		tracks = tracks[:remaining]
 	}
