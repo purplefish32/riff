@@ -1691,13 +1691,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Symmetric arc: center highest, outer scaled down
 			scales := [5]float64{0.5, 0.8, 1.0, 0.8, 0.5}
 			for i := range a.vuLevels {
-				target := int(float64(base) * scales[i])
-				// Smooth: move toward target by 1 step max
-				if a.vuLevels[i] < target {
-					a.vuLevels[i]++
-				} else if a.vuLevels[i] > target {
-					a.vuLevels[i]--
-				}
+				a.vuLevels[i] = int(float64(base) * scales[i])
 			}
 		} else {
 			for i := range a.vuLevels {
