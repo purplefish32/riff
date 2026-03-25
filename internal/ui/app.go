@@ -1040,6 +1040,29 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 			a = a.withStatus(fmt.Sprintf("Moved: %s", a.tracklist[a.queueCursor].Title))
 		}
 		return a, nil
+	case "c":
+		// Jump to now playing track in queue
+		if a.trackPos >= 0 && a.trackPos < len(a.tracklist) {
+			a.queueCursor = a.trackPos
+			a.activeTab = tabQueue
+			visibleRows := a.height - 12
+			if visibleRows < 1 {
+				visibleRows = 1
+			}
+			// Center the playing track in the viewport
+			a.queueScrollOffset = a.trackPos - visibleRows/2
+			if a.queueScrollOffset < 0 {
+				a.queueScrollOffset = 0
+			}
+			if a.queueScrollOffset+visibleRows > len(a.tracklist) {
+				a.queueScrollOffset = len(a.tracklist) - visibleRows
+				if a.queueScrollOffset < 0 {
+					a.queueScrollOffset = 0
+				}
+			}
+			a = a.withStatus("Jumped to now playing")
+		}
+		return a, nil
 	}
 	return a, nil
 }
