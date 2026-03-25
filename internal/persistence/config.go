@@ -8,10 +8,13 @@ import (
 )
 
 type Config struct {
-	Quality     string `json:"quality"`
-	Volume      int    `json:"volume"`
-	DownloadDir string `json:"download_dir"`
-	path        string
+	Quality        string `json:"quality"`
+	Volume         int    `json:"volume"`
+	DownloadDir    string `json:"download_dir"`
+	ShowLineNumbers bool  `json:"show_line_numbers"`
+	ShowPlayCounts  bool  `json:"show_play_counts"`
+	ShowRemaining   bool  `json:"show_remaining"`
+	path           string
 }
 
 func LoadConfig() *Config {

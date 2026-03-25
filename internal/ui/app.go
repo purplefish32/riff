@@ -144,13 +144,16 @@ func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedS
 		playCounts:  pc,
 		tracklist:   qs.Tracks,
 		trackPos:    qs.Position,
-		quality:     cfg.QualityIndex(),
-		volume:      cfg.Volume,
-		queueCursor: queueCursor,
-		likedCursor: likedCursor,
-		selected:    make(map[int]bool),
-		cmdInput:    newCmdInput(),
-		online:      true,
+		quality:         cfg.QualityIndex(),
+		volume:          cfg.Volume,
+		queueCursor:     queueCursor,
+		likedCursor:     likedCursor,
+		selected:        make(map[int]bool),
+		cmdInput:        newCmdInput(),
+		online:          true,
+		showLineNumbers: cfg.ShowLineNumbers,
+		showPlayCounts:  cfg.ShowPlayCounts,
+		showRemaining:   cfg.ShowRemaining,
 
 		filterInput: newFilterInput(),
 	}
@@ -557,6 +560,8 @@ func (a App) updateSearchBrowse(msg tea.KeyMsg) (App, tea.Cmd) {
 		return a, nil
 	case "t":
 		a.showRemaining = !a.showRemaining
+		a.config.ShowRemaining = a.showRemaining
+		a.config.Save()
 		return a, nil
 	}
 	// Delegate j/k/up/down/backspace to search model
@@ -1022,6 +1027,8 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 		return a, nil
 	case "t":
 		a.showRemaining = !a.showRemaining
+		a.config.ShowRemaining = a.showRemaining
+		a.config.Save()
 		return a, nil
 	case "J":
 		// Move selected queue track down one position
@@ -1171,12 +1178,16 @@ func (a App) execCommand(input string) (App, tea.Cmd) {
 		return a.withStatus("Usage: goto <number>"), nil
 	case "lines":
 		a.showLineNumbers = !a.showLineNumbers
+		a.config.ShowLineNumbers = a.showLineNumbers
+		a.config.Save()
 		if a.showLineNumbers {
 			return a.withStatus("Line numbers on"), nil
 		}
 		return a.withStatus("Line numbers off"), nil
 	case "playcounts":
 		a.showPlayCounts = !a.showPlayCounts
+		a.config.ShowPlayCounts = a.showPlayCounts
+		a.config.Save()
 		if a.showPlayCounts {
 			return a.withStatus("Play counts on"), nil
 		}
