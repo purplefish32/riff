@@ -120,6 +120,7 @@ type App struct {
 	showRemaining    bool
 	showLineNumbers  bool
 	activePlaylist   string
+	playlistDirty    bool
 	showPlayCounts   bool
 	showAlbumArt     bool
 	audioInfo        string
@@ -300,10 +301,18 @@ func (a App) saveUIState() {
 
 const maxTracklist = 500
 
+func (a App) markDirty() App {
+	if a.activePlaylist != "" {
+		a.playlistDirty = true
+	}
+	return a
+}
+
 func (a App) withQueueAdd(track types.Track) App {
 	if len(a.tracklist) >= maxTracklist {
 		return a.withStatus("Queue full (500 max)")
 	}
+	a = a.markDirty()
 	a.tracklist = append(a.tracklist, track)
 	a.saveQueue()
 	return a.withStatus(fmt.Sprintf("Queued: %s", track.Title))
@@ -317,6 +326,7 @@ func (a App) withQueueAddAll(tracks []types.Track) App {
 	if len(tracks) > remaining {
 		tracks = tracks[:remaining]
 	}
+	a = a.markDirty()
 	a.tracklist = append(a.tracklist, tracks...)
 	a.saveQueue()
 	return a.withStatus(fmt.Sprintf("Queued %d tracks", len(tracks)))
@@ -754,6 +764,7 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 				a.queueCursor = 0
 				a.queueScrollOffset = 0
 				a.activePlaylist = name
+				a.playlistDirty = false
 				a.saveQueue()
 				a = a.withStatus(fmt.Sprintf("Loaded: %s (%d tracks)", name, len(tracks)))
 				a.activeTab = tabQueue
@@ -823,6 +834,7 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 		a.undoPos = a.queueCursor
 		a.undoTrackPos = a.trackPos
 
+		a = a.markDirty()
 		removingPlaying := a.queueCursor == a.trackPos
 		a.tracklist = append(a.tracklist[:a.queueCursor], a.tracklist[a.queueCursor+1:]...)
 
@@ -919,6 +931,7 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 			// Quick-save: if playing a playlist, auto-save without popup
 			if a.activePlaylist != "" {
 				a.playlists.Save(a.activePlaylist, a.tracklist)
+				a.playlistDirty = false
 				a = a.refreshPlaylists()
 				a = a.withStatus(fmt.Sprintf("Saved: %s (%d tracks)", a.activePlaylist, len(a.tracklist)))
 				return a, nil
@@ -1203,6 +1216,7 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 	case "J":
 		// Move selected queue track down one position
 		if a.activeTab == tabQueue && a.queueCursor < len(a.tracklist)-1 {
+			a = a.markDirty()
 			i := a.queueCursor
 			a.tracklist[i], a.tracklist[i+1] = a.tracklist[i+1], a.tracklist[i]
 			if a.trackPos == i {
@@ -1225,6 +1239,7 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 	case "K":
 		// Move selected queue track up one position
 		if a.activeTab == tabQueue && a.queueCursor > 0 {
+			a = a.markDirty()
 			i := a.queueCursor
 			a.tracklist[i], a.tracklist[i-1] = a.tracklist[i-1], a.tracklist[i]
 			if a.trackPos == i {
@@ -1294,6 +1309,7 @@ func (a App) execCommand(input string) (App, tea.Cmd) {
 			a.trackPos = -1
 			a.queueCursor = 0
 			a.queueScrollOffset = 0
+			a = a.markDirty()
 			a.saveQueue()
 			return a.withStatus("Queue shuffled"), nil
 		}
@@ -2103,7 +2119,11 @@ func (a App) renderTabBar() string {
 		label := t.label
 		if t.tab == tabQueue && len(a.tracklist) > 0 {
 			if a.activePlaylist != "" {
-				label = fmt.Sprintf("1:Queue [%s](%d)", a.activePlaylist, len(a.tracklist))
+				dirty := ""
+				if a.playlistDirty {
+					dirty = "*"
+				}
+				label = fmt.Sprintf("1:Queue [%s%s](%d)", a.activePlaylist, dirty, len(a.tracklist))
 			} else {
 				label = fmt.Sprintf("1:Queue(%d)", len(a.tracklist))
 			}
