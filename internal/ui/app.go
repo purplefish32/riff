@@ -2276,7 +2276,13 @@ func (a App) View() string {
 					helpLine("?", "Toggle this help") +
 					helpLine("q", "Quit"),
 			)
-		content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, helpOverlay)
+		if noColor {
+			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, helpOverlay)
+		} else {
+			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, helpOverlay,
+				lipgloss.WithWhitespaceBackground(lipgloss.Color("#0D0D0D")),
+			)
+		}
 
 	case a.searchVisible():
 		searchOverlay := overlayBorder.
@@ -2287,7 +2293,13 @@ func (a App) View() string {
 		if errView != "" {
 			popup = lipgloss.JoinVertical(lipgloss.Left, searchOverlay, errView)
 		}
-		content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, popup)
+		if noColor {
+			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, popup)
+		} else {
+			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, popup,
+				lipgloss.WithWhitespaceBackground(lipgloss.Color("#0D0D0D")),
+			)
+		}
 
 	default:
 		var tabContent string
