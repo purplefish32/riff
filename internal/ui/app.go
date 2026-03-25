@@ -119,6 +119,7 @@ func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedS
 		mode:        mode,
 		activeTab:   viewTab(qs.ActiveTab),
 		search:      newSearchModel(),
+		nowPlaying:  newNowPlayingModel(),
 		client:      client,
 		player:      player,
 		likes:       likes,
