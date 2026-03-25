@@ -95,7 +95,7 @@ func (m searchModel) Update(msg tea.Msg) (searchModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "up", "k":
+		case "up":
 			if m.input.Focused() {
 				// Recall previous history entry
 				if len(m.searchHistory) > 0 && m.historyIdx > 0 {
@@ -108,7 +108,11 @@ func (m searchModel) Update(msg tea.Msg) (searchModel, tea.Cmd) {
 			if m.cursor > 0 {
 				m.cursor--
 			}
-		case "down", "j":
+		case "k":
+			if !m.input.Focused() && m.cursor > 0 {
+				m.cursor--
+			}
+		case "down":
 			if m.input.Focused() {
 				// Recall next history entry or clear input
 				if len(m.searchHistory) > 0 {
@@ -126,6 +130,13 @@ func (m searchModel) Update(msg tea.Msg) (searchModel, tea.Cmd) {
 			max := m.listLen() - 1
 			if m.cursor < max {
 				m.cursor++
+			}
+		case "j":
+			if !m.input.Focused() {
+				max := m.listLen() - 1
+				if m.cursor < max {
+					m.cursor++
+				}
 			}
 		case "tab":
 			if m.input.Focused() {
