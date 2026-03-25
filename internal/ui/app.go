@@ -308,6 +308,20 @@ func (a App) markDirty() App {
 	return a
 }
 
+// switchTab changes the active tab. If a playlist has unsaved changes,
+// it blocks the switch and shows a prompt.
+func (a App) switchTab(tab viewTab) (App, bool) {
+	if a.playlistDirty && tab != tabQueue {
+		a = a.withStatus("Unsaved playlist! S to save, :discard to discard")
+		return a, false
+	}
+	a.activeTab = tab
+	if tab == tabPlaylists {
+		a = a.refreshPlaylists()
+	}
+	return a, true
+}
+
 func (a App) withQueueAdd(track types.Track) App {
 	if len(a.tracklist) >= maxTracklist {
 		return a.withStatus("Queue full (500 max)")
@@ -480,21 +494,24 @@ func (a App) updateSearchBrowse(msg tea.KeyMsg) (App, tea.Cmd) {
 		a.search.resetHistoryIndex()
 		return a, nil
 	case "1":
-		a.activeTab = tabQueue
-		a.mode = modeNormal
+		if a, ok := a.switchTab(tabQueue); ok {
+			a.mode = modeNormal
+		}
 		return a, nil
 	case "2":
-		a.activeTab = tabLiked
-		a.mode = modeNormal
+		if a, ok := a.switchTab(tabLiked); ok {
+			a.mode = modeNormal
+		}
 		return a, nil
 	case "3":
-		a.activeTab = tabDownloads
-		a.mode = modeNormal
+		if a, ok := a.switchTab(tabDownloads); ok {
+			a.mode = modeNormal
+		}
 		return a, nil
 	case "4":
-		a.activeTab = tabPlaylists
-		a = a.refreshPlaylists()
-		a.mode = modeNormal
+		if a, ok := a.switchTab(tabPlaylists); ok {
+			a.mode = modeNormal
+		}
 		return a, nil
 	case "?":
 		a.mode = modeHelp
@@ -681,21 +698,24 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 		a.mode = modeHelp
 		return a, nil
 	case "1":
-		a.activeTab = tabQueue
-		a.saveUIState()
+		if a, ok := a.switchTab(tabQueue); ok {
+			a.saveUIState()
+		}
 		return a, nil
 	case "2":
-		a.activeTab = tabLiked
-		a.saveUIState()
+		if a, ok := a.switchTab(tabLiked); ok {
+			a.saveUIState()
+		}
 		return a, nil
 	case "3":
-		a.activeTab = tabDownloads
-		a.saveUIState()
+		if a, ok := a.switchTab(tabDownloads); ok {
+			a.saveUIState()
+		}
 		return a, nil
 	case "4":
-		a.activeTab = tabPlaylists
-		a = a.refreshPlaylists()
-		a.saveUIState()
+		if a, ok := a.switchTab(tabPlaylists); ok {
+			a.saveUIState()
+		}
 		return a, nil
 	case "up", "k":
 		if a.activeTab == tabQueue && a.queueCursor > 0 {
@@ -1314,6 +1334,23 @@ func (a App) execCommand(input string) (App, tea.Cmd) {
 			return a.withStatus("Queue shuffled"), nil
 		}
 		return a, nil
+	case "discard":
+		if a.activePlaylist != "" && a.playlistDirty {
+			// Reload from disk
+			tracks, err := a.playlists.Load(a.activePlaylist)
+			if err == nil {
+				a.tracklist = tracks
+				a.trackPos = -1
+				a.queueCursor = 0
+				a.queueScrollOffset = 0
+				a.playlistDirty = false
+				a.saveQueue()
+				return a.withStatus(fmt.Sprintf("Discarded changes to %s", a.activePlaylist)), nil
+			}
+		}
+		a.playlistDirty = false
+		a.activePlaylist = ""
+		return a.withStatus("Discarded"), nil
 	case "clear":
 		a.tracklist = nil
 		a.trackPos = -1
@@ -1478,17 +1515,23 @@ func (a App) execCommand(input string) (App, tea.Cmd) {
 		return a.withStatus("No failed downloads"), nil
 	case "tab":
 		if len(args) > 0 {
+			var target viewTab
 			switch args[0] {
 			case "queue", "1":
-				a.activeTab = tabQueue
+				target = tabQueue
 			case "liked", "2":
-				a.activeTab = tabLiked
+				target = tabLiked
 			case "downloads", "3":
-				a.activeTab = tabDownloads
+				target = tabDownloads
+			case "playlists", "4":
+				target = tabPlaylists
+			default:
+				return a.withStatus("Usage: tab queue|liked|downloads|playlists"), nil
 			}
+			a, _ = a.switchTab(target)
 			return a, nil
 		}
-		return a.withStatus("Usage: tab queue|liked|downloads"), nil
+		return a.withStatus("Usage: tab queue|liked|downloads|playlists"), nil
 	case "help":
 		a.mode = modeHelp
 		return a, nil
@@ -1874,22 +1917,19 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.MouseButtonLeft:
 			// Tab bar is at row 2 (0-indexed)
 			if msg.Y == 2 {
-				// Determine which tab was clicked based on approximate x positions
-				// Tab labels: "1:Queue(N)", "2:Liked(N)", "3:Downloads"
-				// Each tab is separated by "│"; rough x breakpoints
+				var target viewTab
 				if msg.X < 15 {
-					a.activeTab = tabQueue
-					a.saveUIState()
+					target = tabQueue
 				} else if msg.X < 28 {
-					a.activeTab = tabLiked
-					a.saveUIState()
+					target = tabLiked
 				} else if msg.X < 44 {
-					a.activeTab = tabDownloads
-					a.saveUIState()
+					target = tabDownloads
 				} else {
-					a.activeTab = tabPlaylists
-					a = a.refreshPlaylists()
+					target = tabPlaylists
+				}
+				if a, ok := a.switchTab(target); ok {
 					a.saveUIState()
+					_ = a
 				}
 			} else if msg.Y >= 5 {
 				// Content area starts around row 5 (header row 4, then tracks)
