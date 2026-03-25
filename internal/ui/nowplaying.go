@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/progress"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/purplefish32/riff/internal/types"
 )
 
@@ -19,6 +20,9 @@ type nowPlayingModel struct {
 	audioInfo     string
 	progress      progress.Model
 	showRemaining bool
+	coverID       string
+	albumArt      string
+	showAlbumArt  bool
 }
 
 func newNowPlayingModel() nowPlayingModel {
@@ -102,5 +106,12 @@ func (m nowPlayingModel) View(width int) string {
 		dimStyle.Render(formatTime(m.duration)),
 	)
 
-	return nowPlayingStyle.Render(info + "\n" + bar)
+	textBlock := nowPlayingStyle.Render(info + "\n" + bar)
+
+	// Render album art to the left when enabled and available.
+	if m.showAlbumArt && !noColor && m.albumArt != "" {
+		return lipgloss.JoinHorizontal(lipgloss.Top, m.albumArt, textBlock)
+	}
+
+	return textBlock
 }
