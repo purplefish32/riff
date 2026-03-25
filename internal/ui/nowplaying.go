@@ -119,7 +119,7 @@ func (m nowPlayingModel) View(width int) string {
 			if i < len(textLines) {
 				text = textLines[i]
 			}
-			combined = append(combined, art+" "+text)
+			combined = append(combined, art+"  "+text)
 		}
 		return nowPlayingStyle.Render(strings.Join(combined, "\n"))
 	}
