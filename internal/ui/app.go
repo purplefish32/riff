@@ -132,6 +132,7 @@ type App struct {
 	addToTrack       *types.Track
 	addToPickerNames []string
 	addToPickerIdx   int
+	addToCreating    bool
 }
 
 func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedStore, dl *downloader.Downloader, cfg *persistence.Config, qs *persistence.QueueStore, pc *persistence.PlayCountStore, ps *persistence.PlaylistStore) App {
@@ -1701,14 +1702,47 @@ func (a App) updateSavePlaylist(msg tea.KeyMsg) (App, tea.Cmd) {
 }
 
 func (a App) updateAddToPlaylist(msg tea.KeyMsg) (App, tea.Cmd) {
+	// Creating new playlist: text input mode
+	if a.addToCreating {
+		switch msg.String() {
+		case "esc":
+			a.addToCreating = false
+			a.saveInput.Blur()
+			return a, nil
+		case "enter":
+			name := strings.TrimSpace(a.saveInput.Value())
+			if name != "" && a.addToTrack != nil {
+				a.playlists.Save(name, []types.Track{*a.addToTrack})
+				a = a.refreshPlaylists()
+				a = a.withStatus(fmt.Sprintf("Created %s with: %s", name, a.addToTrack.Title))
+			}
+			a.addToCreating = false
+			a.addToTrack = nil
+			a.saveInput.Blur()
+			a.mode = modeNormal
+			return a, nil
+		}
+		var cmd tea.Cmd
+		a.saveInput, cmd = a.saveInput.Update(msg)
+		return a, cmd
+	}
+
+	// Picker mode
 	switch msg.String() {
 	case "esc":
 		a.mode = modeNormal
 		a.addToTrack = nil
 		return a, nil
 	case "enter":
-		if a.addToTrack != nil && a.addToPickerIdx < len(a.addToPickerNames) {
-			name := a.addToPickerNames[a.addToPickerIdx]
+		if a.addToPickerIdx == 0 {
+			// "+ New playlist" selected
+			a.addToCreating = true
+			a.saveInput.Reset()
+			a.saveInput.Focus()
+			return a, nil
+		}
+		if a.addToTrack != nil && a.addToPickerIdx-1 < len(a.addToPickerNames) {
+			name := a.addToPickerNames[a.addToPickerIdx-1]
 			tracks, err := a.playlists.Load(name)
 			if err != nil {
 				tracks = nil
@@ -1727,7 +1761,7 @@ func (a App) updateAddToPlaylist(msg tea.KeyMsg) (App, tea.Cmd) {
 		}
 		return a, nil
 	case "down", "j":
-		if a.addToPickerIdx < len(a.addToPickerNames)-1 {
+		if a.addToPickerIdx < len(a.addToPickerNames) {
 			a.addToPickerIdx++
 		}
 		return a, nil
@@ -2655,11 +2689,21 @@ func (a App) View() string {
 		}
 		var pickerContent string
 		pickerContent = titleStyle.Render(title) + "\n\n"
-		for i, name := range a.addToPickerNames {
-			if i == a.addToPickerIdx {
-				pickerContent += selectionStripe.Render("▸") + " " + normalStyle.Bold(true).Render(name) + "\n"
+		if a.addToCreating {
+			pickerContent += "  " + a.saveInput.View() + "\n"
+		} else {
+			// "+ New playlist" option at index 0
+			if a.addToPickerIdx == 0 {
+				pickerContent += selectionStripe.Render("▸") + " " + titleStyle.Render("+ New playlist") + "\n"
 			} else {
-				pickerContent += "  " + normalStyle.Render(name) + "\n"
+				pickerContent += "  " + dimStyle.Render("+ New playlist") + "\n"
+			}
+			for i, name := range a.addToPickerNames {
+				if i+1 == a.addToPickerIdx {
+					pickerContent += selectionStripe.Render("▸") + " " + normalStyle.Bold(true).Render(name) + "\n"
+				} else {
+					pickerContent += "  " + normalStyle.Render(name) + "\n"
+				}
 			}
 		}
 		addPopup := overlayBorder.Padding(1, 2).Render(pickerContent)
