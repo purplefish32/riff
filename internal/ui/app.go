@@ -1697,9 +1697,6 @@ func (a App) renderQueueView() string {
 			}
 			row += colRight(duration, colDuration, durSt) + playCountSuffix
 		}
-		if displayIdx%2 == 1 && !isCursor && !isPlaying {
-			row = altRowBg.Width(a.width).Render(row)
-		}
 		s += row + "\n"
 	}
 
@@ -1751,9 +1748,6 @@ func (a App) renderLikedView() string {
 		if a.selected[t.ID] {
 			// Replace leading space/cursor with selection marker
 			row = titleStyle.Render("●") + row[1:]
-		}
-		if displayIdx%2 == 1 && !isCursor {
-			row = altRowBg.Width(a.width).Render(row)
 		}
 		s += row + "\n"
 	}
