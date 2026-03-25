@@ -9,14 +9,15 @@ import (
 )
 
 type nowPlayingModel struct {
-	track    *types.Track
-	paused   bool
-	liked    bool
-	position float64
-	duration float64
-	quality  string
-	volume   int
-	progress progress.Model
+	track         *types.Track
+	paused        bool
+	liked         bool
+	position      float64
+	duration      float64
+	quality       string
+	volume        int
+	progress      progress.Model
+	showRemaining bool
 }
 
 func newNowPlayingModel() nowPlayingModel {
@@ -84,8 +85,16 @@ func (m nowPlayingModel) View(width int) string {
 	}
 
 	m.progress.Width = barWidth
+	leftTime := formatTime(m.position)
+	if m.showRemaining && m.duration > 0 {
+		remaining := m.duration - m.position
+		if remaining < 0 {
+			remaining = 0
+		}
+		leftTime = "-" + formatTime(remaining)
+	}
 	bar := fmt.Sprintf("  %s %s %s",
-		dimStyle.Render(formatTime(m.position)),
+		dimStyle.Render(leftTime),
 		m.progress.ViewAs(pct),
 		dimStyle.Render(formatTime(m.duration)),
 	)

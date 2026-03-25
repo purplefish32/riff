@@ -102,6 +102,7 @@ type App struct {
 	filterInput      textinput.Model
 	filterText       string
 	filteredIndices  []int
+	showRemaining    bool
 }
 
 func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedStore, dl *downloader.Downloader, cfg *persistence.Config, qs *persistence.QueueStore) App {
@@ -302,6 +303,7 @@ func (a App) withStatus(msg string) App {
 func (a App) syncNowPlaying() App {
 	a.nowPlaying.quality = qualities[a.quality]
 	a.nowPlaying.volume = a.volume
+	a.nowPlaying.showRemaining = a.showRemaining
 	if a.nowPlaying.track != nil {
 		a.nowPlaying.liked = a.likes.IsLiked(a.nowPlaying.track.ID)
 	}
@@ -538,6 +540,9 @@ func (a App) updateSearchBrowse(msg tea.KeyMsg) (App, tea.Cmd) {
 		return a, nil
 	case "home", "ctrl+a":
 		a.search.cursor = 0
+		return a, nil
+	case "t":
+		a.showRemaining = !a.showRemaining
 		return a, nil
 	}
 	// Delegate j/k/up/down/backspace to search model
@@ -987,6 +992,9 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 			a.likedCursor = 0
 			a.likedScrollOffset = 0
 		}
+		return a, nil
+	case "t":
+		a.showRemaining = !a.showRemaining
 		return a, nil
 	}
 	return a, nil
