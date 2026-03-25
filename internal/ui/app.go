@@ -1684,20 +1684,15 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		a.tickCount++
 		a.spinnerIdx = (a.spinnerIdx + 1) % len(spinnerFrames)
-		// Animate VU meter every tick
+		// Animate VU meter from real audio levels
 		if a.nowPlaying.track != nil && !a.nowPlaying.paused {
-			for i := range a.vuLevels {
-				delta := rand.Intn(3) - 1 // -1, 0, or +1
-				a.vuLevels[i] += delta
-				if a.vuLevels[i] < 0 {
-					a.vuLevels[i] = 0
-				}
-				if a.vuLevels[i] > 6 {
-					a.vuLevels[i] = 6
-				}
-			}
+			left, right := a.player.GetAudioLevels()
+			a.vuLevels[0] = dbToLevel(left, 0.7)
+			a.vuLevels[1] = dbToLevel(left, 1.0)
+			a.vuLevels[2] = dbToLevel((left+right)/2, 1.0)
+			a.vuLevels[3] = dbToLevel(right, 1.0)
+			a.vuLevels[4] = dbToLevel(right, 0.7)
 		} else {
-			// Decay toward 0 when paused or nothing playing
 			for i := range a.vuLevels {
 				if a.vuLevels[i] > 0 {
 					a.vuLevels[i]--
@@ -2360,6 +2355,27 @@ func isNetworkError(err error) bool {
 		strings.Contains(s, "i/o timeout") ||
 		strings.Contains(s, "network") ||
 		strings.Contains(s, "all instances failed")
+}
+
+// dbToLevel converts a dB value (-60..0) to a VU bar level (0..6).
+// scale adjusts sensitivity (0.7 = outer bars, 1.0 = inner bars).
+func dbToLevel(db, scale float64) int {
+	if db <= -60 {
+		return 0
+	}
+	if db >= 0 {
+		return 6
+	}
+	// Map -60..0 dB to 0..6, apply scale
+	normalized := (db + 60) / 60 * scale
+	level := int(normalized * 7)
+	if level < 0 {
+		level = 0
+	}
+	if level > 6 {
+		level = 6
+	}
+	return level
 }
 
 func openBrowser(url string) {

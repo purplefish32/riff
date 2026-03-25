@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -48,6 +49,7 @@ func New(logger *log.Logger) (*Player, error) {
 		"--idle",
 		"--no-video",
 		"--really-quiet",
+		"--af=lavfi=[astats=metadata=1:reset=1]",
 		fmt.Sprintf("--input-ipc-server=%s", socketPath),
 	)
 	cmd.Stdout = nil
@@ -214,6 +216,29 @@ func (p *Player) GetSampleRate() (int, error) {
 	}
 	rate, _ := resp.Data.(float64)
 	return int(rate), nil
+}
+
+// GetAudioLevels returns RMS levels for left and right channels in dB.
+// Returns (-100, -100) on error or when nothing is playing.
+func (p *Player) GetAudioLevels() (left, right float64) {
+	left, right = -100, -100
+	lResp, err := p.command("get_property", "af-metadata/lavfi.astats.1.RMS_level")
+	if err == nil {
+		if s, ok := lResp.Data.(string); ok {
+			if v, err := strconv.ParseFloat(s, 64); err == nil {
+				left = v
+			}
+		}
+	}
+	rResp, err := p.command("get_property", "af-metadata/lavfi.astats.2.RMS_level")
+	if err == nil {
+		if s, ok := rResp.Data.(string); ok {
+			if v, err := strconv.ParseFloat(s, 64); err == nil {
+				right = v
+			}
+		}
+	}
+	return
 }
 
 // WaitForEnd blocks until the current track finishes.
