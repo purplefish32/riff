@@ -2118,15 +2118,15 @@ func (a App) renderTabBar() string {
 		tab   viewTab
 	}
 	tabs := []tabEntry{
-		{"1:Queue", tabQueue},
+		{"Queue", tabQueue},
 	}
 	if a.hasDownloadActivity() {
-		tabs = append(tabs, tabEntry{"2:Downloads", tabDownloads})
+		tabs = append(tabs, tabEntry{"Downloads", tabDownloads})
 	}
-	plLabel := "3:Playlists"
+	plLabel := "Playlists"
 	if a.playlists != nil {
 		if names := a.playlists.List(); len(names) > 0 {
-			plLabel = fmt.Sprintf("3:Playlists(%d)", len(names))
+			plLabel = fmt.Sprintf("Playlists(%d)", len(names))
 		}
 	}
 	tabs = append(tabs, tabEntry{plLabel, tabPlaylists})
@@ -2143,9 +2143,9 @@ func (a App) renderTabBar() string {
 				if a.playlistDirty {
 					dirty = "*"
 				}
-				label = fmt.Sprintf("1:Queue [%s%s](%d)", a.activePlaylist, dirty, len(a.tracklist))
+				label = fmt.Sprintf("Queue [%s%s](%d)", a.activePlaylist, dirty, len(a.tracklist))
 			} else {
-				label = fmt.Sprintf("1:Queue(%d)", len(a.tracklist))
+				label = fmt.Sprintf("Queue(%d)", len(a.tracklist))
 			}
 		}
 		if selCount > 0 && t.tab == a.activeTab {
@@ -2532,7 +2532,7 @@ func (a App) View() string {
 			Padding(1, 2).
 			Render(
 				titleStyle.Render("Keybindings") + "\n\n" +
-					helpLine("1-3", "Switch tabs") +
+					helpLine("tab/shift+tab", "Switch tabs") +
 					helpLine("/", "Focus search") +
 					helpLine("tab", "Toggle track/album/artist search") +
 					helpLine("enter", "Play track / browse album") +
