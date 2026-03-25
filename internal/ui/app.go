@@ -1688,16 +1688,16 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.nowPlaying.track != nil && !a.nowPlaying.paused {
 			db := a.player.GetAudioLevel()
 			base := dbToLevel(db, 1.0)
+			// Symmetric arc: center highest, outer scaled down
+			scales := [5]float64{0.5, 0.8, 1.0, 0.8, 0.5}
 			for i := range a.vuLevels {
-				jitter := rand.Intn(3) - 1
-				level := base + jitter
-				if level < 0 {
-					level = 0
+				target := int(float64(base) * scales[i])
+				// Smooth: move toward target by 1 step max
+				if a.vuLevels[i] < target {
+					a.vuLevels[i]++
+				} else if a.vuLevels[i] > target {
+					a.vuLevels[i]--
 				}
-				if level > 6 {
-					level = 6
-				}
-				a.vuLevels[i] = level
 			}
 		} else {
 			for i := range a.vuLevels {
