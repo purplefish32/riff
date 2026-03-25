@@ -880,6 +880,62 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 			return a, nil
 		}
 		return a, nil
+	case "ctrl+d":
+		visibleRows := a.height - 12
+		if visibleRows < 1 {
+			visibleRows = 1
+		}
+		halfPage := visibleRows / 2
+		if halfPage < 1 {
+			halfPage = 1
+		}
+		if a.activeTab == tabQueue && len(a.tracklist) > 0 {
+			a.queueCursor += halfPage
+			if a.queueCursor >= len(a.tracklist) {
+				a.queueCursor = len(a.tracklist) - 1
+			}
+			if a.queueCursor >= a.queueScrollOffset+visibleRows {
+				a.queueScrollOffset = a.queueCursor - visibleRows + 1
+			}
+		}
+		if a.activeTab == tabLiked && len(a.likes.Tracks) > 0 {
+			a.likedCursor += halfPage
+			if a.likedCursor >= len(a.likes.Tracks) {
+				a.likedCursor = len(a.likes.Tracks) - 1
+			}
+			if a.likedCursor >= a.likedScrollOffset+visibleRows {
+				a.likedScrollOffset = a.likedCursor - visibleRows + 1
+			}
+		}
+		return a, nil
+	case "ctrl+u":
+		visibleRows := a.height - 12
+		if visibleRows < 1 {
+			visibleRows = 1
+		}
+		halfPage := visibleRows / 2
+		if halfPage < 1 {
+			halfPage = 1
+		}
+		if a.activeTab == tabQueue {
+			a.queueCursor -= halfPage
+			if a.queueCursor < 0 {
+				a.queueCursor = 0
+			}
+			if a.queueCursor < a.queueScrollOffset {
+				a.queueScrollOffset = a.queueCursor
+			}
+		}
+		if a.activeTab == tabLiked {
+			a.likedCursor -= halfPage
+			if a.likedCursor < 0 {
+				a.likedCursor = 0
+			}
+			if a.likedCursor < a.likedScrollOffset {
+				a.likedScrollOffset = a.likedCursor
+			}
+		}
+		return a, nil
 	case "G":
 		visibleRows := a.height - 12
 		if visibleRows < 1 {
