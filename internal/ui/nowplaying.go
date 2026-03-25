@@ -54,7 +54,7 @@ func (m nowPlayingModel) View(width int) string {
 	// Line 2: metadata
 	var meta []string
 	meta = append(meta, artistStyle.Render(m.track.Artist.Name))
-	meta = append(meta, dimStyle.Render(m.track.Album.Title))
+	meta = append(meta, artistStyle.Render(m.track.Album.Title))
 	if m.audioInfo != "" {
 		meta = append(meta, dimStyle.Render(m.audioInfo))
 	} else if m.quality != "" {
@@ -64,7 +64,7 @@ func (m nowPlayingModel) View(width int) string {
 		meta = append(meta, titleStyle.Render("♥"))
 	}
 	meta = append(meta, dimStyle.Render(fmt.Sprintf("vol:%d%%", m.volume)))
-	line2 := "     " + strings.Join(meta, dimStyle.Render(" · "))
+	line2 := "     " + strings.Join(meta, artistStyle.Render(" · "))
 
 	// Ultra-narrow: no progress bar
 	if width < 40 {
