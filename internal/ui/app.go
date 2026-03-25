@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/purplefish32/riff/internal/api"
@@ -58,6 +60,7 @@ const (
 	modeSearchInput                   // typing in search box
 	modeSearchBrowse                  // navigating search results
 	modeHelp                          // help overlay
+	modeGotoLine                      // go-to-line popup
 )
 
 type App struct {
@@ -94,6 +97,7 @@ type App struct {
 	err              error
 	statusMsg        string
 	statusTicks      int // ticks remaining before status clears
+	gotoInput        textinput.Model
 }
 
 func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedStore, dl *downloader.Downloader, cfg *persistence.Config, qs *persistence.QueueStore) App {
@@ -134,7 +138,17 @@ func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedS
 		likedCursor: likedCursor,
 		selected:    make(map[int]bool),
 		online:      true,
+		gotoInput:   newGotoInput(),
 	}
+}
+
+func newGotoInput() textinput.Model {
+	ti := textinput.New()
+	ti.Placeholder = "line number"
+	ti.Prompt = "Go to: "
+	ti.CharLimit = 5
+	ti.Width = 10
+	return ti
 }
 
 func tick() tea.Cmd {
@@ -850,8 +864,69 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 		a.config.Save()
 		a = a.withStatus(fmt.Sprintf("Quality: %s", qualities[a.quality]))
 		return a, nil
+	case "g":
+		if a.activeTab == tabQueue || a.activeTab == tabLiked {
+			a.mode = modeGotoLine
+			a.gotoInput.Reset()
+			a.gotoInput.Focus()
+			return a, nil
+		}
+		return a, nil
 	}
 	return a, nil
+}
+
+func (a App) updateGotoLine(msg tea.KeyMsg) (App, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		a.gotoInput.Blur()
+		a.mode = modeNormal
+		return a, nil
+	case "enter":
+		a.gotoInput.Blur()
+		a.mode = modeNormal
+		line, err := strconv.Atoi(a.gotoInput.Value())
+		if err != nil || line < 1 {
+			return a, nil
+		}
+		idx := line - 1 // convert 1-based to 0-based
+		if a.activeTab == tabQueue {
+			if idx >= len(a.tracklist) {
+				idx = len(a.tracklist) - 1
+			}
+			a.queueCursor = idx
+			// adjust scroll
+			visibleRows := a.height - 12
+			if visibleRows < 1 {
+				visibleRows = 1
+			}
+			if a.queueCursor < a.queueScrollOffset {
+				a.queueScrollOffset = a.queueCursor
+			}
+			if a.queueCursor >= a.queueScrollOffset+visibleRows {
+				a.queueScrollOffset = a.queueCursor - visibleRows + 1
+			}
+		} else if a.activeTab == tabLiked {
+			if idx >= len(a.likes.Tracks) {
+				idx = len(a.likes.Tracks) - 1
+			}
+			a.likedCursor = idx
+			visibleRows := a.height - 12
+			if visibleRows < 1 {
+				visibleRows = 1
+			}
+			if a.likedCursor < a.likedScrollOffset {
+				a.likedScrollOffset = a.likedCursor
+			}
+			if a.likedCursor >= a.likedScrollOffset+visibleRows {
+				a.likedScrollOffset = a.likedCursor - visibleRows + 1
+			}
+		}
+		return a, nil
+	}
+	var cmd tea.Cmd
+	a.gotoInput, cmd = a.gotoInput.Update(msg)
+	return a, cmd
 }
 
 // --- Main Update dispatcher ---
@@ -988,6 +1063,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case modeSearchBrowse:
 			a, cmd := a.updateSearchBrowse(msg)
 			return a, cmd
+		case modeGotoLine:
+			a, cmd := a.updateGotoLine(msg)
+			return a, cmd
 		default:
 			a, cmd := a.updateNormal(msg)
 			return a, cmd
@@ -1103,7 +1181,7 @@ func (a App) renderTabBar() string {
 		tabs = append(tabs, tabEntry{"3:Downloads", tabDownloads})
 	}
 
-	dimmedAll := a.searchVisible() || a.mode == modeHelp
+	dimmedAll := a.searchVisible() || a.mode == modeHelp || a.mode == modeGotoLine
 
 	selCount := len(a.selected)
 	var parts []string
@@ -1416,6 +1494,12 @@ func (a App) View() string {
 			)
 		content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, helpOverlay)
 
+	case a.mode == modeGotoLine:
+		gotoPopup := overlayBorder.
+			Padding(1, 2).
+			Render(a.gotoInput.View())
+		content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, gotoPopup)
+
 	case a.searchVisible():
 		searchOverlay := overlayBorder.
 			Padding(1, 2).
@@ -1454,14 +1538,16 @@ func (a App) contextHelp() string {
 		return dimStyle.Render("  ↑↓ navigate  enter select  a queue  d download  / new search  esc close")
 	case modeHelp:
 		return dimStyle.Render("  esc close")
+	case modeGotoLine:
+		return dimStyle.Render("  enter go  esc cancel")
 	default:
 		switch a.activeTab {
 		case tabLiked:
-			return dimStyle.Render("  ↑↓ navigate  enter play  a queue  d download  l unlike  / search  ? help  q quit")
+			return dimStyle.Render("  ↑↓ navigate  enter play  a queue  d download  l unlike  g goto  / search  ? help  q quit")
 		case tabDownloads:
 			return dimStyle.Render("  r retry  / search  ? help  q quit")
 		default:
-			return dimStyle.Render("  ↑↓ navigate  enter play  x remove  d download  l like  / search  ? help  q quit")
+			return dimStyle.Render("  ↑↓ navigate  enter play  x remove  d download  l like  g goto  / search  ? help  q quit")
 		}
 	}
 }
