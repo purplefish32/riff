@@ -72,6 +72,7 @@ const (
 	modeCommand                         // vim-style : command line
 	modeSavePlaylist                    // save playlist popup
 	modeRenamePlaylist                  // rename playlist popup
+	modeAddToPlaylist                   // pick playlist to add track to
 )
 
 type App struct {
@@ -128,6 +129,9 @@ type App struct {
 	saveTracks       []types.Track
 	renameInput      textinput.Model
 	renameFrom       string
+	addToTrack       *types.Track
+	addToPickerNames []string
+	addToPickerIdx   int
 }
 
 func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedStore, dl *downloader.Downloader, cfg *persistence.Config, qs *persistence.QueueStore, pc *persistence.PlayCountStore, ps *persistence.PlaylistStore) App {
@@ -588,6 +592,24 @@ func (a App) updateSearchBrowse(msg tea.KeyMsg) (App, tea.Cmd) {
 			a = a.stopPlayback()
 		}
 		return a, nil
+	case "P":
+		if a.playlists == nil {
+			return a, nil
+		}
+		target := a.search.selectedTrack()
+		if target == nil {
+			return a, nil
+		}
+		names := a.playlists.List()
+		if len(names) == 0 {
+			a = a.withStatus("No playlists. Use :save to create one first")
+			return a, nil
+		}
+		a.addToTrack = target
+		a.addToPickerNames = names
+		a.addToPickerIdx = 0
+		a.mode = modeAddToPlaylist
+		return a, nil
 	case "S":
 		if a.playlists != nil && a.search.mode == modeBrowseAlbum {
 			if tracks := a.search.browsingAlbumTracks(); len(tracks) > 0 {
@@ -949,6 +971,24 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 		if a.nowPlaying.track != nil {
 			a = a.stopPlayback()
 		}
+		return a, nil
+	case "P":
+		if a.playlists == nil {
+			return a, nil
+		}
+		target := a.targetTrackOrNowPlaying()
+		if target == nil {
+			return a, nil
+		}
+		names := a.playlists.List()
+		if len(names) == 0 {
+			a = a.withStatus("No playlists. Use :save to create one first")
+			return a, nil
+		}
+		a.addToTrack = target
+		a.addToPickerNames = names
+		a.addToPickerIdx = 0
+		a.mode = modeAddToPlaylist
 		return a, nil
 	case "S":
 		if a.playlists == nil {
@@ -1660,6 +1700,41 @@ func (a App) updateSavePlaylist(msg tea.KeyMsg) (App, tea.Cmd) {
 	return a, cmd
 }
 
+func (a App) updateAddToPlaylist(msg tea.KeyMsg) (App, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		a.mode = modeNormal
+		a.addToTrack = nil
+		return a, nil
+	case "enter":
+		if a.addToTrack != nil && a.addToPickerIdx < len(a.addToPickerNames) {
+			name := a.addToPickerNames[a.addToPickerIdx]
+			tracks, err := a.playlists.Load(name)
+			if err != nil {
+				tracks = nil
+			}
+			tracks = append(tracks, *a.addToTrack)
+			a.playlists.Save(name, tracks)
+			a = a.refreshPlaylists()
+			a = a.withStatus(fmt.Sprintf("Added to %s: %s", name, a.addToTrack.Title))
+		}
+		a.addToTrack = nil
+		a.mode = modeNormal
+		return a, nil
+	case "up", "k":
+		if a.addToPickerIdx > 0 {
+			a.addToPickerIdx--
+		}
+		return a, nil
+	case "down", "j":
+		if a.addToPickerIdx < len(a.addToPickerNames)-1 {
+			a.addToPickerIdx++
+		}
+		return a, nil
+	}
+	return a, nil
+}
+
 func (a App) updateRenamePlaylist(msg tea.KeyMsg) (App, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
@@ -2028,6 +2103,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case modeRenamePlaylist:
 			a, cmd := a.updateRenamePlaylist(msg)
 			return a, cmd
+		case modeAddToPlaylist:
+			a, cmd := a.updateAddToPlaylist(msg)
+			return a, cmd
 		default:
 			a, cmd := a.updateNormal(msg)
 			return a, cmd
@@ -2166,7 +2244,7 @@ func (a App) renderTabBar() string {
 	}
 	tabs = append(tabs, tabEntry{plLabel, tabPlaylists})
 
-	dimmedAll := a.searchVisible() || a.mode == modeHelp || a.mode == modeFilter || a.mode == modeSavePlaylist || a.mode == modeRenamePlaylist
+	dimmedAll := a.searchVisible() || a.mode == modeHelp || a.mode == modeFilter || a.mode == modeSavePlaylist || a.mode == modeRenamePlaylist || a.mode == modeAddToPlaylist
 
 	selCount := len(a.selected)
 	var parts []string
@@ -2570,6 +2648,29 @@ func (a App) View() string {
 			)
 		}
 
+	case a.mode == modeAddToPlaylist:
+		title := "Add to playlist"
+		if a.addToTrack != nil {
+			title = fmt.Sprintf("Add \"%s\" to:", a.addToTrack.Title)
+		}
+		var pickerContent string
+		pickerContent = titleStyle.Render(title) + "\n\n"
+		for i, name := range a.addToPickerNames {
+			if i == a.addToPickerIdx {
+				pickerContent += selectionStripe.Render("▸") + " " + normalStyle.Bold(true).Render(name) + "\n"
+			} else {
+				pickerContent += "  " + normalStyle.Render(name) + "\n"
+			}
+		}
+		addPopup := overlayBorder.Padding(1, 2).Render(pickerContent)
+		if noColor {
+			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, addPopup)
+		} else {
+			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, addPopup,
+				lipgloss.WithWhitespaceBackground(lipgloss.Color("#0D0D0D")),
+			)
+		}
+
 	case a.mode == modeHelp:
 		helpOverlay := overlayBorder.
 			Padding(1, 2).
@@ -2667,6 +2768,8 @@ func (a App) contextHelp() string {
 		return dimStyle.Render("  enter save  esc cancel")
 	case modeRenamePlaylist:
 		return dimStyle.Render("  enter rename  esc cancel")
+	case modeAddToPlaylist:
+		return dimStyle.Render("  ↑↓ select  enter add  esc cancel")
 	default:
 		switch a.activeTab {
 		case tabLiked:
