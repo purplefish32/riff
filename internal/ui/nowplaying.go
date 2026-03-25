@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/progress"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/purplefish32/riff/internal/types"
 )
 
@@ -104,11 +103,26 @@ func (m nowPlayingModel) View(width int) string {
 		dimStyle.Render(formatTime(m.duration)),
 	)
 
-	textBlock := nowPlayingStyle.Render(line1 + "\n" + line2 + "\n" + line3)
-
 	if m.showAlbumArt && !noColor && m.albumArt != "" {
-		return lipgloss.JoinHorizontal(lipgloss.Top, m.albumArt+" ", textBlock)
+		// Manually join art lines with text lines to avoid alignment issues
+		artLines := strings.Split(m.albumArt, "\n")
+		textLines := []string{line1, line2, line3}
+		var combined []string
+		for i := 0; i < len(artLines) || i < len(textLines); i++ {
+			art := ""
+			if i < len(artLines) {
+				art = artLines[i]
+			} else {
+				art = strings.Repeat(" ", 8) // art width
+			}
+			text := ""
+			if i < len(textLines) {
+				text = textLines[i]
+			}
+			combined = append(combined, art+" "+text)
+		}
+		return nowPlayingStyle.Render(strings.Join(combined, "\n"))
 	}
 
-	return textBlock
+	return nowPlayingStyle.Render(line1 + "\n" + line2 + "\n" + line3)
 }
