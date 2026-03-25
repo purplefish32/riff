@@ -119,6 +119,7 @@ type App struct {
 	filteredIndices  []int
 	showRemaining    bool
 	showLineNumbers  bool
+	activePlaylist   string
 	showPlayCounts   bool
 	showAlbumArt     bool
 	audioInfo        string
@@ -303,6 +304,7 @@ func (a App) withQueueAdd(track types.Track) App {
 	if len(a.tracklist) >= maxTracklist {
 		return a.withStatus("Queue full (500 max)")
 	}
+	a.activePlaylist = ""
 	a.tracklist = append(a.tracklist, track)
 	a.saveQueue()
 	return a.withStatus(fmt.Sprintf("Queued: %s", track.Title))
@@ -313,6 +315,7 @@ func (a App) withQueueAddAll(tracks []types.Track) App {
 	if remaining <= 0 {
 		return a.withStatus("Queue full (500 max)")
 	}
+	a.activePlaylist = ""
 	if len(tracks) > remaining {
 		tracks = tracks[:remaining]
 	}
@@ -752,6 +755,7 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 				a.trackPos = -1
 				a.queueCursor = 0
 				a.queueScrollOffset = 0
+				a.activePlaylist = name
 				a.saveQueue()
 				a = a.withStatus(fmt.Sprintf("Loaded: %s (%d tracks)", name, len(tracks)))
 				a.activeTab = tabQueue
@@ -1286,6 +1290,7 @@ func (a App) execCommand(input string) (App, tea.Cmd) {
 			a.queueCursor = 0
 			a.queueScrollOffset = 0
 			a.saveQueue()
+			a.activePlaylist = ""
 			return a.withStatus("Queue shuffled"), nil
 		}
 		return a, nil
@@ -1297,6 +1302,7 @@ func (a App) execCommand(input string) (App, tea.Cmd) {
 		a.saveQueue()
 		a.player.Stop()
 		a.nowPlaying.track = nil
+		a.activePlaylist = ""
 		return a.withStatus("Queue cleared"), nil
 	case "vol", "volume":
 		if len(args) > 0 {
@@ -1495,6 +1501,7 @@ func (a App) execCommand(input string) (App, tea.Cmd) {
 		a.trackPos = -1
 		a.queueCursor = 0
 		a.queueScrollOffset = 0
+		a.activePlaylist = name
 		a.saveQueue()
 		return a.withStatus(fmt.Sprintf("Loaded: %s (%d tracks)", name, len(tracks))), nil
 	case "playlists":
@@ -2091,7 +2098,11 @@ func (a App) renderTabBar() string {
 	for _, t := range tabs {
 		label := t.label
 		if t.tab == tabQueue && len(a.tracklist) > 0 {
-			label = fmt.Sprintf("1:Queue(%d)", len(a.tracklist))
+			if a.activePlaylist != "" {
+				label = fmt.Sprintf("1:Queue [%s](%d)", a.activePlaylist, len(a.tracklist))
+			} else {
+				label = fmt.Sprintf("1:Queue(%d)", len(a.tracklist))
+			}
 		}
 		if t.tab == tabLiked && len(a.likes.Tracks) > 0 {
 			label = fmt.Sprintf("2:Liked(%d)", len(a.likes.Tracks))
