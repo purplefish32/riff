@@ -113,13 +113,13 @@ func (m nowPlayingModel) View(width int) string {
 			if i < len(artLines) {
 				art = artLines[i]
 			} else {
-				art = strings.Repeat(" ", 8) // art width
+				art = strings.Repeat(" ", 8)
 			}
 			text := ""
 			if i < len(textLines) {
 				text = textLines[i]
 			}
-			combined = append(combined, art+"  "+text)
+			combined = append(combined, "  "+art+" "+text)
 		}
 		return nowPlayingStyle.Render(strings.Join(combined, "\n"))
 	}
