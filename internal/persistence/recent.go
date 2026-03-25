@@ -1,8 +1,8 @@
 package persistence
 
-// RecentStore tracks recently played tracks in ~/.config/riff/recent.json
-// Stores up to 100 tracks in reverse chronological order (most recent first).
-// Deduplicates by track ID (if a track is played again, it moves to the top).
+// RecentStore tracks play history in ~/.config/riff/recent.json
+// Stores up to 500 entries in reverse chronological order (most recent first).
+// No deduplication — every play is a separate entry.
 
 import (
 	"encoding/json"
@@ -13,7 +13,7 @@ import (
 	"github.com/purplefish32/riff/internal/types"
 )
 
-const maxRecent = 100
+const maxRecent = 500
 
 type RecentStore struct {
 	path   string
@@ -40,19 +40,9 @@ func NewRecentStore() *RecentStore {
 	return s
 }
 
-// Add prepends track to the front (most recent), deduplicates by ID, and
-// caps the list at maxRecent before persisting.
+// Add prepends track to the history and caps at maxRecent.
 func (s *RecentStore) Add(track types.Track) {
-	// Remove any existing entry with the same ID
-	filtered := s.Tracks[:0]
-	for _, t := range s.Tracks {
-		if t.ID != track.ID {
-			filtered = append(filtered, t)
-		}
-	}
-	// Prepend to front
-	s.Tracks = append([]types.Track{track}, filtered...)
-	// Cap at maxRecent
+	s.Tracks = append([]types.Track{track}, s.Tracks...)
 	if len(s.Tracks) > maxRecent {
 		s.Tracks = s.Tracks[:maxRecent]
 	}
