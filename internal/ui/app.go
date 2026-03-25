@@ -308,12 +308,12 @@ func (a App) markDirty() App {
 	return a
 }
 
-// switchTab changes the active tab. If a playlist has unsaved changes,
-// it blocks the switch and shows a prompt.
+// switchTab changes the active tab. Auto-saves dirty playlists.
 func (a App) switchTab(tab viewTab) (App, bool) {
-	if a.playlistDirty && tab != tabQueue {
-		a = a.withStatus("Unsaved playlist! S to save, :discard to discard")
-		return a, false
+	if a.playlistDirty && a.activePlaylist != "" && a.playlists != nil {
+		a.playlists.Save(a.activePlaylist, a.tracklist)
+		a.playlistDirty = false
+		a = a.withStatus(fmt.Sprintf("Auto-saved: %s", a.activePlaylist))
 	}
 	a.activeTab = tab
 	if tab == tabPlaylists {
