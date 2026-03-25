@@ -121,6 +121,7 @@ type App struct {
 	playlistDirty    bool
 	showPlayCounts   bool
 	showAlbumArt     bool
+	repeat           bool
 	audioInfo        string
 	saveInput        textinput.Model
 	saveTracks       []types.Track
@@ -405,6 +406,7 @@ func (a App) syncNowPlaying() App {
 	a.nowPlaying.showRemaining = a.showRemaining
 	a.nowPlaying.audioInfo = a.audioInfo
 	a.nowPlaying.showAlbumArt = a.showAlbumArt
+	a.nowPlaying.repeat = a.repeat
 	if a.nowPlaying.track != nil {
 		a.nowPlaying.liked = a.likes.IsLiked(a.nowPlaying.track.ID)
 		a.nowPlaying.coverID = a.nowPlaying.track.Album.Cover
@@ -1101,6 +1103,14 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 		a.config.Save()
 		a = a.withStatus(fmt.Sprintf("Quality: %s", qualities[a.quality]))
 		return a, nil
+	case "R":
+		a.repeat = !a.repeat
+		if a.repeat {
+			a = a.withStatus("Repeat: on ↻")
+		} else {
+			a = a.withStatus("Repeat: off")
+		}
+		return a, nil
 	case "f":
 		if a.activeTab == tabQueue {
 			a.mode = modeFilter
@@ -1346,6 +1356,12 @@ func (a App) execCommand(input string) (App, tea.Cmd) {
 			}
 		}
 		return a.withStatus("Usage: goto <number>"), nil
+	case "repeat":
+		a.repeat = !a.repeat
+		if a.repeat {
+			return a.withStatus("Repeat: on ↻"), nil
+		}
+		return a.withStatus("Repeat: off"), nil
 	case "lines":
 		a.showLineNumbers = !a.showLineNumbers
 		a.config.ShowLineNumbers = a.showLineNumbers
@@ -2022,6 +2038,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if a.trackPos < len(a.tracklist)-1 {
 			return a.playPos(a.trackPos + 1)
+		}
+		if a.repeat && len(a.tracklist) > 0 {
+			return a.playPos(0)
 		}
 		a.nowPlaying.track = nil
 		a.nowPlaying.paused = false

@@ -22,6 +22,7 @@ type nowPlayingModel struct {
 	coverID       string
 	albumArt      string
 	showAlbumArt  bool
+	repeat        bool
 }
 
 func newNowPlayingModel() nowPlayingModel {
@@ -62,6 +63,9 @@ func (m nowPlayingModel) View(width int) string {
 	}
 	if m.liked {
 		meta = append(meta, titleStyle.Render("♥"))
+	}
+	if m.repeat {
+		meta = append(meta, titleStyle.Render("↻"))
 	}
 	meta = append(meta, dimStyle.Render(fmt.Sprintf("vol:%d%%", m.volume)))
 	line2 := "     " + strings.Join(meta, artistStyle.Render(" · "))
