@@ -1907,7 +1907,7 @@ func (a App) renderQueueView() string {
 				numSt, artSt, albSt, titSt, durSt = playingStyle, playingStyle, playingStyle, playingStyle, playingStyle
 			case isCursor:
 				marker = selectionStripe.Render("▸")
-				numSt, artSt, albSt, titSt, durSt = normalStyle.Bold(true), normalStyle.Bold(true), normalStyle.Bold(true), normalStyle.Bold(true), normalStyle.Bold(true)
+				numSt, artSt, albSt, titSt, durSt = dimStyle.Bold(true), artistStyle.Bold(true), dimStyle.Bold(true), normalStyle.Bold(true), dimStyle.Bold(true)
 			case played:
 				marker = " "
 				numSt, artSt, albSt, titSt, durSt = dimStyle, dimStyle, dimStyle, dimStyle, dimStyle
