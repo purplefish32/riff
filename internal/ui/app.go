@@ -47,6 +47,8 @@ var qualities = []string{"LOW", "HIGH", "LOSSLESS", "HI_RES"}
 
 var spinnerFrames = []string{"▁", "▂", "▃", "▄", "▅", "▆", "▇", "█", "▇", "▆", "▅", "▄", "▃", "▂"}
 
+var vuBars = []string{"▁", "▂", "▃", "▄", "▅", "▆", "▇"}
+
 type tickMsg struct{}
 
 type viewTab int
@@ -97,6 +99,7 @@ type App struct {
 	config           *persistence.Config
 	queueStore       *persistence.QueueStore
 	playCounts       *persistence.PlayCountStore
+	playlists        *persistence.PlaylistStore
 	playGen          int
 	quality          int
 	volume           int
@@ -115,9 +118,10 @@ type App struct {
 	showPlayCounts   bool
 	showAlbumArt     bool
 	audioInfo        string
+	vuLevels         [5]int
 }
 
-func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedStore, dl *downloader.Downloader, cfg *persistence.Config, qs *persistence.QueueStore, pc *persistence.PlayCountStore) App {
+func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedStore, dl *downloader.Downloader, cfg *persistence.Config, qs *persistence.QueueStore, pc *persistence.PlayCountStore, ps *persistence.PlaylistStore) App {
 	mode := modeNormal
 	if len(qs.Tracks) == 0 {
 		mode = modeSearchInput
@@ -152,6 +156,7 @@ func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedS
 		config:      cfg,
 		queueStore:  qs,
 		playCounts:  pc,
+		playlists:   ps,
 		tracklist:   qs.Tracks,
 		trackPos:    qs.Position,
 		quality:         cfg.QualityIndex(),
@@ -346,6 +351,12 @@ func (a App) syncNowPlaying() App {
 		a.nowPlaying.liked = a.likes.IsLiked(a.nowPlaying.track.ID)
 		a.nowPlaying.coverID = a.nowPlaying.track.Album.Cover
 	}
+	// Build VU meter string
+	var vu strings.Builder
+	for _, level := range a.vuLevels {
+		vu.WriteString(titleStyle.Render(vuBars[level]))
+	}
+	a.nowPlaying.vuMeter = vu.String()
 	return a
 }
 
@@ -1328,6 +1339,57 @@ func (a App) execCommand(input string) (App, tea.Cmd) {
 	case "help":
 		a.mode = modeHelp
 		return a, nil
+	case "save":
+		if a.playlists == nil {
+			return a.withStatus("Playlists unavailable"), nil
+		}
+		if len(args) == 0 {
+			return a.withStatus("Usage: save <name>"), nil
+		}
+		name := args[0]
+		if err := a.playlists.Save(name, a.tracklist); err != nil {
+			return a.withStatus(fmt.Sprintf("Save failed: %s", err)), nil
+		}
+		return a.withStatus(fmt.Sprintf("Saved: %s (%d tracks)", name, len(a.tracklist))), nil
+	case "load":
+		if a.playlists == nil {
+			return a.withStatus("Playlists unavailable"), nil
+		}
+		if len(args) == 0 {
+			return a.withStatus("Usage: load <name>"), nil
+		}
+		name := args[0]
+		tracks, err := a.playlists.Load(name)
+		if err != nil {
+			return a.withStatus(fmt.Sprintf("Load failed: %s", err)), nil
+		}
+		a.tracklist = tracks
+		a.trackPos = -1
+		a.queueCursor = 0
+		a.queueScrollOffset = 0
+		a.saveQueue()
+		return a.withStatus(fmt.Sprintf("Loaded: %s (%d tracks)", name, len(tracks))), nil
+	case "playlists":
+		if a.playlists == nil {
+			return a.withStatus("Playlists unavailable"), nil
+		}
+		names := a.playlists.List()
+		if len(names) == 0 {
+			return a.withStatus("No saved playlists"), nil
+		}
+		return a.withStatus(strings.Join(names, ", ")), nil
+	case "delete":
+		if a.playlists == nil {
+			return a.withStatus("Playlists unavailable"), nil
+		}
+		if len(args) == 0 {
+			return a.withStatus("Usage: delete <name>"), nil
+		}
+		name := args[0]
+		if err := a.playlists.Delete(name); err != nil {
+			return a.withStatus(fmt.Sprintf("Delete failed: %s", err)), nil
+		}
+		return a.withStatus(fmt.Sprintf("Deleted: %s", name)), nil
 	default:
 		// Try as a number (":42" = goto 42)
 		if n, err := strconv.Atoi(cmd); err == nil && n >= 1 {
@@ -1622,6 +1684,26 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		a.tickCount++
 		a.spinnerIdx = (a.spinnerIdx + 1) % len(spinnerFrames)
+		// Animate VU meter every tick
+		if a.nowPlaying.track != nil && !a.nowPlaying.paused {
+			for i := range a.vuLevels {
+				delta := rand.Intn(3) - 1 // -1, 0, or +1
+				a.vuLevels[i] += delta
+				if a.vuLevels[i] < 0 {
+					a.vuLevels[i] = 0
+				}
+				if a.vuLevels[i] > 6 {
+					a.vuLevels[i] = 6
+				}
+			}
+		} else {
+			// Decay toward 0 when paused or nothing playing
+			for i := range a.vuLevels {
+				if a.vuLevels[i] > 0 {
+					a.vuLevels[i]--
+				}
+			}
+		}
 		// Every 10th tick (~1 second): update position, status, sync
 		if a.tickCount%10 == 0 {
 			a = a.syncNowPlaying()
@@ -2194,7 +2276,13 @@ func (a App) View() string {
 					helpLine("?", "Toggle this help") +
 					helpLine("q", "Quit"),
 			)
-		content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, helpOverlay)
+		if noColor {
+			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, helpOverlay)
+		} else {
+			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, helpOverlay,
+				lipgloss.WithWhitespaceBackground(lipgloss.Color("#0D0D0D")),
+			)
+		}
 
 	case a.searchVisible():
 		searchOverlay := overlayBorder.
@@ -2205,7 +2293,13 @@ func (a App) View() string {
 		if errView != "" {
 			popup = lipgloss.JoinVertical(lipgloss.Left, searchOverlay, errView)
 		}
-		content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, popup)
+		if noColor {
+			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, popup)
+		} else {
+			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, popup,
+				lipgloss.WithWhitespaceBackground(lipgloss.Color("#0D0D0D")),
+			)
+		}
 
 	default:
 		var tabContent string
