@@ -64,13 +64,14 @@ const (
 type inputMode int
 
 const (
-	modeNormal       inputMode = iota // browsing tabs
-	modeSearchInput                   // typing in search box
-	modeSearchBrowse                  // navigating search results
-	modeHelp                          // help overlay
-	modeFilter                        // inline filter on queue/liked
-	modeCommand                       // vim-style : command line
-	modeSavePlaylist                  // save playlist popup
+	modeNormal         inputMode = iota // browsing tabs
+	modeSearchInput                     // typing in search box
+	modeSearchBrowse                    // navigating search results
+	modeHelp                            // help overlay
+	modeFilter                          // inline filter on queue/liked
+	modeCommand                         // vim-style : command line
+	modeSavePlaylist                    // save playlist popup
+	modeRenamePlaylist                  // rename playlist popup
 )
 
 type App struct {
@@ -123,6 +124,8 @@ type App struct {
 	audioInfo        string
 	saveInput        textinput.Model
 	saveTracks       []types.Track
+	renameInput      textinput.Model
+	renameFrom       string
 }
 
 func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedStore, dl *downloader.Downloader, cfg *persistence.Config, qs *persistence.QueueStore, pc *persistence.PlayCountStore, ps *persistence.PlaylistStore) App {
@@ -176,6 +179,7 @@ func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedS
 		showAlbumArt:    cfg.ShowAlbumArt,
 		filterInput: newFilterInput(),
 		saveInput:   newSaveInput(),
+		renameInput: newRenameInput(),
 	}
 }
 
@@ -193,6 +197,15 @@ func newSaveInput() textinput.Model {
 	ti := textinput.New()
 	ti.Placeholder = "playlist name"
 	ti.Prompt = "Save as: "
+	ti.CharLimit = 30
+	ti.Width = 25
+	return ti
+}
+
+func newRenameInput() textinput.Model {
+	ti := textinput.New()
+	ti.Placeholder = "new name"
+	ti.Prompt = "Rename to: "
 	ti.CharLimit = 30
 	ti.Width = 25
 	return ti
@@ -1034,6 +1047,15 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 		}
 		return a, nil
 	case "r":
+		if a.activeTab == tabPlaylists && len(a.playlistNames) > 0 {
+			name := a.playlistNames[a.playlistCursor]
+			a.renameFrom = name
+			a.renameInput.Reset()
+			a.renameInput.SetValue(name)
+			a.renameInput.Focus()
+			a.mode = modeRenamePlaylist
+			return a, nil
+		}
 		if a.activeTab == tabDownloads && a.dl != nil {
 			n := a.dl.RetryFailed()
 			if n > 0 {
@@ -1553,7 +1575,49 @@ func (a App) updateSavePlaylist(msg tea.KeyMsg) (App, tea.Cmd) {
 	return a, cmd
 }
 
-
+func (a App) updateRenamePlaylist(msg tea.KeyMsg) (App, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		a.renameInput.Blur()
+		a.mode = modeNormal
+		return a, nil
+	case "enter":
+		newName := strings.TrimSpace(a.renameInput.Value())
+		if newName == "" {
+			a = a.withStatus("Name cannot be empty")
+			return a, nil
+		}
+		oldName := a.renameFrom
+		tracks, err := a.playlists.Load(oldName)
+		if err != nil {
+			a = a.withStatus(fmt.Sprintf("Load failed: %s", err))
+			a.renameInput.Blur()
+			a.mode = modeNormal
+			return a, nil
+		}
+		if err := a.playlists.Save(newName, tracks); err != nil {
+			a = a.withStatus(fmt.Sprintf("Save failed: %s", err))
+			a.renameInput.Blur()
+			a.mode = modeNormal
+			return a, nil
+		}
+		if oldName != newName {
+			a.playlists.Delete(oldName)
+		}
+		a = a.refreshPlaylists()
+		if a.playlistCursor >= len(a.playlistNames) && a.playlistCursor > 0 {
+			a.playlistCursor = len(a.playlistNames) - 1
+		}
+		a.renameInput.Blur()
+		a.renameFrom = ""
+		a.mode = modeNormal
+		a = a.withStatus(fmt.Sprintf("Renamed: %s -> %s", oldName, newName))
+		return a, nil
+	}
+	var cmd tea.Cmd
+	a.renameInput, cmd = a.renameInput.Update(msg)
+	return a, cmd
+}
 
 // computeFilteredIndices builds the filteredIndices slice based on filterText
 // and the current tab. Call this any time filterText or the underlying list changes.
@@ -1879,6 +1943,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case modeSavePlaylist:
 			a, cmd := a.updateSavePlaylist(msg)
 			return a, cmd
+		case modeRenamePlaylist:
+			a, cmd := a.updateRenamePlaylist(msg)
+			return a, cmd
 		default:
 			a, cmd := a.updateNormal(msg)
 			return a, cmd
@@ -2017,7 +2084,7 @@ func (a App) renderTabBar() string {
 	}
 	tabs = append(tabs, tabEntry{plLabel, tabPlaylists})
 
-	dimmedAll := a.searchVisible() || a.mode == modeHelp || a.mode == modeFilter || a.mode == modeSavePlaylist
+	dimmedAll := a.searchVisible() || a.mode == modeHelp || a.mode == modeFilter || a.mode == modeSavePlaylist || a.mode == modeRenamePlaylist
 
 	selCount := len(a.selected)
 	var parts []string
@@ -2403,6 +2470,16 @@ func (a App) View() string {
 			)
 		}
 
+	case a.mode == modeRenamePlaylist:
+		renamePopup := overlayBorder.Padding(1, 2).Render(a.renameInput.View())
+		if noColor {
+			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, renamePopup)
+		} else {
+			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, renamePopup,
+				lipgloss.WithWhitespaceBackground(lipgloss.Color("#0D0D0D")),
+			)
+		}
+
 	case a.mode == modeHelp:
 		helpOverlay := overlayBorder.
 			Padding(1, 2).
@@ -2498,6 +2575,8 @@ func (a App) contextHelp() string {
 		return dimStyle.Render("  type to filter  enter play  esc clear")
 	case modeSavePlaylist:
 		return dimStyle.Render("  enter save  esc cancel")
+	case modeRenamePlaylist:
+		return dimStyle.Render("  enter rename  esc cancel")
 	default:
 		switch a.activeTab {
 		case tabLiked:
@@ -2505,7 +2584,7 @@ func (a App) contextHelp() string {
 		case tabDownloads:
 			return dimStyle.Render("  r retry  / search  ? more  q quit")
 		case tabPlaylists:
-			return dimStyle.Render("  enter load  a append  x delete  / search  ? more  q quit")
+			return dimStyle.Render("  enter load  a append  r rename  x delete  / search  ? more  q quit")
 		default:
 			return dimStyle.Render("  enter play  x remove  S save  J/K move  / search  ? more  q quit")
 		}
