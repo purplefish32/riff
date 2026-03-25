@@ -536,6 +536,27 @@ func (a App) updateSearchBrowse(msg tea.KeyMsg) (App, tea.Cmd) {
 			a = a.stopPlayback()
 		}
 		return a, nil
+	case "S":
+		if a.playlists != nil && a.search.mode == modeBrowseAlbum {
+			if tracks := a.search.browsingAlbumTracks(); len(tracks) > 0 {
+				a.saveTracks = tracks
+				// Pre-fill with sanitized album title
+				title := strings.ToLower(a.search.albumTitle)
+				title = strings.ReplaceAll(title, " ", "-")
+				var sanitized strings.Builder
+				for _, ch := range title {
+					if (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_' {
+						sanitized.WriteRune(ch)
+					}
+				}
+				a.saveInput.Reset()
+				a.saveInput.SetValue(sanitized.String())
+				a.saveInput.Focus()
+				a.mode = modeSavePlaylist
+				return a, nil
+			}
+		}
+		return a, nil
 	case "n":
 		if a.trackPos < len(a.tracklist)-1 {
 			return a.playPos(a.trackPos + 1)
