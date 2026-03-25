@@ -38,6 +38,11 @@ type queueAlbumMsg struct {
 	err    error
 }
 
+type albumArtMsg struct {
+	coverID string
+	art     string
+}
+
 var qualities = []string{"LOW", "HIGH", "LOSSLESS", "HI_RES"}
 
 var spinnerFrames = []string{"▁", "▂", "▃", "▄", "▅", "▆", "▇", "█", "▇", "▆", "▅", "▄", "▃", "▂"}
@@ -108,6 +113,7 @@ type App struct {
 	showRemaining    bool
 	showLineNumbers  bool
 	showPlayCounts   bool
+	showAlbumArt     bool
 	audioInfo        string
 }
 
@@ -158,6 +164,7 @@ func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedS
 		showLineNumbers: cfg.ShowLineNumbers,
 		showPlayCounts:  cfg.ShowPlayCounts,
 		showRemaining:   cfg.ShowRemaining,
+		showAlbumArt:    cfg.ShowAlbumArt,
 
 		filterInput: newFilterInput(),
 	}
@@ -208,6 +215,13 @@ func (a App) makeWaitForTrackEnd(gen int) tea.Cmd {
 	}
 }
 
+func (a App) fetchArt(coverID string) tea.Cmd {
+	return func() tea.Msg {
+		art := fetchAlbumArt(coverID, 8, 4)
+		return albumArtMsg{coverID: coverID, art: art}
+	}
+}
+
 func (a App) playPos(pos int) (App, tea.Cmd) {
 	if pos < 0 || pos >= len(a.tracklist) {
 		return a, nil
@@ -221,6 +235,8 @@ func (a App) playPos(pos int) (App, tea.Cmd) {
 	a.nowPlaying.paused = false
 	a.nowPlaying.position = 0
 	a.nowPlaying.duration = 0
+	a.nowPlaying.albumArt = ""
+	a.nowPlaying.coverID = ""
 	a.err = nil
 	a.loading = true
 	a.streamRetries = 0
@@ -308,6 +324,8 @@ func (a App) stopPlayback() App {
 	a.nowPlaying.paused = false
 	a.nowPlaying.position = 0
 	a.nowPlaying.duration = 0
+	a.nowPlaying.albumArt = ""
+	a.nowPlaying.coverID = ""
 	a.audioInfo = ""
 	return a
 }
@@ -323,8 +341,10 @@ func (a App) syncNowPlaying() App {
 	a.nowPlaying.volume = a.volume
 	a.nowPlaying.showRemaining = a.showRemaining
 	a.nowPlaying.audioInfo = a.audioInfo
+	a.nowPlaying.showAlbumArt = a.showAlbumArt
 	if a.nowPlaying.track != nil {
 		a.nowPlaying.liked = a.likes.IsLiked(a.nowPlaying.track.ID)
+		a.nowPlaying.coverID = a.nowPlaying.track.Album.Cover
 	}
 	return a
 }
@@ -1190,6 +1210,14 @@ func (a App) execCommand(input string) (App, tea.Cmd) {
 			return a.withStatus("Play counts on"), nil
 		}
 		return a.withStatus("Play counts off"), nil
+	case "art":
+		a.showAlbumArt = !a.showAlbumArt
+		a.config.ShowAlbumArt = a.showAlbumArt
+		a.config.Save()
+		if a.showAlbumArt {
+			return a.withStatus("Album art on"), nil
+		}
+		return a.withStatus("Album art off"), nil
 	case "play", "p":
 		if len(args) > 0 {
 			// :play N — play track at line N
@@ -1672,7 +1700,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.err = err
 			return a, nil
 		}
-		return a, a.makeWaitForTrackEnd(a.playGen)
+		cmds := []tea.Cmd{a.makeWaitForTrackEnd(a.playGen)}
+		if a.trackPos >= 0 && a.trackPos < len(a.tracklist) {
+			if coverID := a.tracklist[a.trackPos].Album.Cover; coverID != "" {
+				cmds = append(cmds, a.fetchArt(coverID))
+			}
+		}
+		return a, tea.Batch(cmds...)
 
 	case trackEndedMsg:
 		if msg.gen != a.playGen {
@@ -1702,6 +1736,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case DownloadUpdateMsg:
+		return a, nil
+
+	case albumArtMsg:
+		if a.nowPlaying.track != nil && a.nowPlaying.track.Album.Cover == msg.coverID {
+			a.nowPlaying.albumArt = msg.art
+		}
 		return a, nil
 
 	case errMsg:
