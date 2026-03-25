@@ -1000,6 +1000,46 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 	case "t":
 		a.showRemaining = !a.showRemaining
 		return a, nil
+	case "J":
+		// Move selected queue track down one position
+		if a.activeTab == tabQueue && a.queueCursor < len(a.tracklist)-1 {
+			i := a.queueCursor
+			a.tracklist[i], a.tracklist[i+1] = a.tracklist[i+1], a.tracklist[i]
+			if a.trackPos == i {
+				a.trackPos = i + 1
+			} else if a.trackPos == i+1 {
+				a.trackPos = i
+			}
+			a.queueCursor = i + 1
+			visibleRows := a.height - 12
+			if visibleRows < 1 {
+				visibleRows = 1
+			}
+			if a.queueCursor >= a.queueScrollOffset+visibleRows {
+				a.queueScrollOffset = a.queueCursor - visibleRows + 1
+			}
+			a.saveQueue()
+			a = a.withStatus(fmt.Sprintf("Moved: %s", a.tracklist[a.queueCursor].Title))
+		}
+		return a, nil
+	case "K":
+		// Move selected queue track up one position
+		if a.activeTab == tabQueue && a.queueCursor > 0 {
+			i := a.queueCursor
+			a.tracklist[i], a.tracklist[i-1] = a.tracklist[i-1], a.tracklist[i]
+			if a.trackPos == i {
+				a.trackPos = i - 1
+			} else if a.trackPos == i-1 {
+				a.trackPos = i
+			}
+			a.queueCursor = i - 1
+			if a.queueCursor < a.queueScrollOffset {
+				a.queueScrollOffset = a.queueCursor
+			}
+			a.saveQueue()
+			a = a.withStatus(fmt.Sprintf("Moved: %s", a.tracklist[a.queueCursor].Title))
+		}
+		return a, nil
 	}
 	return a, nil
 }
