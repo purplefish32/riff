@@ -71,8 +71,6 @@ func init() {
 		Foreground(lipgloss.Color("#666666"))
 
 	nowPlayingStyle = lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder(), true, false, false, false).
-		BorderForeground(lipgloss.Color("#444444")).
 		Padding(0, 1)
 
 	searchPromptStyle = lipgloss.NewStyle().
