@@ -1533,7 +1533,7 @@ func (a App) renderQueueView() string {
 		s += dimStyle.Render(fmt.Sprintf("  ^ %d more above", a.queueScrollOffset)) + "\n"
 	}
 
-	for i := a.queueScrollOffset; i < end; i++ {
+	for displayIdx, i := 0, a.queueScrollOffset; i < end; i, displayIdx = i+1, displayIdx+1 {
 		t := a.tracklist[i]
 		isPlaying := i == a.trackPos
 		isCursor := i == a.queueCursor
@@ -1591,6 +1591,9 @@ func (a App) renderQueueView() string {
 			}
 			row += colRight(duration, colDuration, durSt)
 		}
+		if displayIdx%2 == 1 && !isCursor && !isPlaying {
+			row = altRowBg.Width(a.width).Render(row)
+		}
 		s += row + "\n"
 	}
 
@@ -1627,14 +1630,13 @@ func (a App) renderLikedView() string {
 		s += dimStyle.Render(fmt.Sprintf("  ^ %d more above", a.likedScrollOffset)) + "\n"
 	}
 
-	for i := a.likedScrollOffset; i < end; i++ {
+	for displayIdx, i := 0, a.likedScrollOffset; i < end; i, displayIdx = i+1, displayIdx+1 {
 		t := a.likes.Tracks[i]
 		isCursor := i == a.likedCursor
 		isMatch := a.isFilterMatch(i)
 		// When filter is active and this track doesn't match, show dimmed
 		if !isMatch {
 			row := trackRow(i, t, false, true, a.dl != nil && a.dl.IsDownloaded(t), tc)
-			// Re-render all columns in dimStyle by overwriting with a dim version
 			row = dimStyle.Render(row)
 			s += row + "\n"
 			continue
@@ -1643,6 +1645,9 @@ func (a App) renderLikedView() string {
 		if a.selected[t.ID] {
 			// Replace leading space/cursor with selection marker
 			row = titleStyle.Render("●") + row[1:]
+		}
+		if displayIdx%2 == 1 && !isCursor {
+			row = altRowBg.Width(a.width).Render(row)
 		}
 		s += row + "\n"
 	}
