@@ -1767,8 +1767,12 @@ func (a App) View() string {
 	// --- Help bar ---
 	help := a.contextHelp()
 
+	// --- Separator lines ---
+	separator := dimStyle.Render(strings.Repeat("─", a.width))
+
 	// --- Footer (fixed bottom) ---
 	var footerParts []string
+	footerParts = append(footerParts, separator)
 	if statusLine != "" {
 		footerParts = append(footerParts, statusLine)
 	}
@@ -1778,8 +1782,8 @@ func (a App) View() string {
 	footerParts = append(footerParts, np, help)
 	footer := strings.Join(footerParts, "\n")
 
-	// --- Fixed top (header + tab bar) ---
-	topFixed := lipgloss.JoinVertical(lipgloss.Left, "", header, tabBar, "")
+	// --- Fixed top (header + tab bar + separator) ---
+	topFixed := lipgloss.JoinVertical(lipgloss.Left, "", header, tabBar, separator)
 
 	// --- Calculate remaining content height ---
 	topHeight := lipgloss.Height(topFixed)
