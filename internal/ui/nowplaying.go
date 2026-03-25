@@ -44,37 +44,35 @@ func (m nowPlayingModel) View(width int) string {
 		return nowPlayingStyle.Render(dimStyle.Render("  Nothing playing"))
 	}
 
-	state := "▶"
+	state := titleStyle.Render("▶")
 	if m.paused {
-		state = "⏸"
+		state = dimStyle.Render("⏸")
 	}
 
-	sep := dimStyle.Render(" · ")
+	// Line 1: state + title
+	line1 := fmt.Sprintf("  %s  %s", state, titleStyle.Render(m.track.Title))
 
-	parts := []string{
-		"  " + state,
-		titleStyle.Render(m.track.Title),
-		artistStyle.Render(m.track.Artist.Name),
-		dimStyle.Render(m.track.Album.Title),
-	}
+	// Line 2: metadata
+	var meta []string
+	meta = append(meta, artistStyle.Render(m.track.Artist.Name))
+	meta = append(meta, dimStyle.Render(m.track.Album.Title))
 	if m.audioInfo != "" {
-		parts = append(parts, dimStyle.Render(m.audioInfo))
+		meta = append(meta, dimStyle.Render(m.audioInfo))
 	} else if m.quality != "" {
-		parts = append(parts, dimStyle.Render(m.quality))
+		meta = append(meta, dimStyle.Render(m.quality))
 	}
 	if m.liked {
-		parts = append(parts, titleStyle.Render("♥"))
+		meta = append(meta, titleStyle.Render("♥"))
 	}
-	parts = append(parts, dimStyle.Render(fmt.Sprintf("vol:%d%%", m.volume)))
+	meta = append(meta, dimStyle.Render(fmt.Sprintf("vol:%d%%", m.volume)))
+	line2 := "     " + strings.Join(meta, dimStyle.Render(" · "))
 
-	info := strings.Join(parts, sep)
-
-	// Ultra-narrow: hide progress bar entirely
+	// Ultra-narrow: no progress bar
 	if width < 40 {
-		return nowPlayingStyle.Render(info)
+		return nowPlayingStyle.Render(line1 + "\n" + line2)
 	}
 
-	// Progress bar
+	// Line 3: progress bar
 	barWidth := width - 20
 	if barWidth < 10 {
 		barWidth = 10
@@ -100,17 +98,16 @@ func (m nowPlayingModel) View(width int) string {
 		}
 		leftTime = "-" + formatTime(remaining)
 	}
-	bar := fmt.Sprintf("  %s %s %s",
+	line3 := fmt.Sprintf("  %s %s %s",
 		dimStyle.Render(leftTime),
 		m.progress.ViewAs(pct),
 		dimStyle.Render(formatTime(m.duration)),
 	)
 
-	textBlock := nowPlayingStyle.Render(info + "\n" + bar)
+	textBlock := nowPlayingStyle.Render(line1 + "\n" + line2 + "\n" + line3)
 
-	// Render album art to the left when enabled and available.
 	if m.showAlbumArt && !noColor && m.albumArt != "" {
-		return lipgloss.JoinHorizontal(lipgloss.Top, m.albumArt, textBlock)
+		return lipgloss.JoinHorizontal(lipgloss.Top, m.albumArt+" ", textBlock)
 	}
 
 	return textBlock
