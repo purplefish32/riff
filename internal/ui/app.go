@@ -283,6 +283,13 @@ func (a App) playPos(pos int) (App, tea.Cmd) {
 }
 
 func (a App) addAndPlay(track *types.Track) (App, tea.Cmd) {
+	if a.activePlaylist != "" {
+		// Playing from search replaces the playlist queue
+		a.activePlaylist = ""
+		a.playlistDirty = false
+		a.tracklist = []types.Track{*track}
+		return a.playPos(0)
+	}
 	insertPos := a.trackPos + 1
 	if insertPos > len(a.tracklist) {
 		insertPos = len(a.tracklist)
