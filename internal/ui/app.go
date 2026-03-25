@@ -53,7 +53,8 @@ type tickMsg struct{}
 type viewTab int
 
 const (
-	tabQueue viewTab = iota
+	tabQueue     viewTab = iota
+	tabRecent
 	tabPlaylists
 )
 
@@ -97,8 +98,11 @@ type App struct {
 	likes            *persistence.LikedStore
 	dl               *downloader.Downloader
 	config           *persistence.Config
-	queueStore       *persistence.QueueStore
-	playCounts       *persistence.PlayCountStore
+	queueStore          *persistence.QueueStore
+	recent              *persistence.RecentStore
+	recentCursor        int
+	recentScrollOffset  int
+	playCounts          *persistence.PlayCountStore
 	playlists        *persistence.PlaylistStore
 	playlistNames    []string
 	playlistCursor   int
@@ -134,7 +138,7 @@ type App struct {
 	deleteTarget     string
 }
 
-func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedStore, dl *downloader.Downloader, cfg *persistence.Config, qs *persistence.QueueStore, pc *persistence.PlayCountStore, ps *persistence.PlaylistStore) App {
+func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedStore, dl *downloader.Downloader, cfg *persistence.Config, qs *persistence.QueueStore, pc *persistence.PlayCountStore, ps *persistence.PlaylistStore, rs *persistence.RecentStore) App {
 	mode := modeNormal
 	if len(qs.Tracks) == 0 {
 		mode = modeSearchInput
@@ -161,6 +165,7 @@ func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedS
 		dl:          dl,
 		config:      cfg,
 		queueStore:  qs,
+		recent:      rs,
 		playCounts:  pc,
 		playlists:       ps,
 		playlistNames:   ps.List(),
@@ -271,6 +276,9 @@ func (a App) playPos(pos int) (App, tea.Cmd) {
 	a.err = nil
 	a.loading = true
 	a.streamRetries = 0
+	if a.recent != nil {
+		a.recent.Add(*track)
+	}
 	trackID := track.ID
 	q := qualities[a.quality]
 	return a, func() tea.Msg {
@@ -323,6 +331,10 @@ func (a App) switchTab(tab viewTab) (App, bool) {
 	if tab == tabPlaylists {
 		a = a.refreshPlaylists()
 	}
+	if tab == tabRecent {
+		a.recentCursor = 0
+		a.recentScrollOffset = 0
+	}
 	return a, true
 }
 
@@ -360,6 +372,14 @@ func (a App) targetTrack() *types.Track {
 		case tabQueue:
 			if len(a.tracklist) > 0 {
 				return &a.tracklist[a.queueCursor]
+			}
+		case tabRecent:
+			if a.recent != nil {
+				tracks := a.recent.List()
+				if len(tracks) > 0 && a.recentCursor < len(tracks) {
+					t := tracks[a.recentCursor]
+					return &t
+				}
 			}
 		}
 	}
@@ -501,13 +521,19 @@ func (a App) updateSearchBrowse(msg tea.KeyMsg) (App, tea.Cmd) {
 		}
 		return a, nil
 	case "2":
+		a, ok := a.switchTab(tabRecent)
+		if ok {
+			a.mode = modeNormal
+		}
+		return a, nil
+	case "3":
 		a, ok := a.switchTab(tabPlaylists)
 		if ok {
 			a.mode = modeNormal
 		}
 		return a, nil
 	case "tab", "]":
-		tabs := []viewTab{tabQueue, tabPlaylists}
+		tabs := []viewTab{tabQueue, tabRecent, tabPlaylists}
 		next := tabs[(int(a.activeTab)+1)%len(tabs)]
 		a, ok := a.switchTab(next)
 		if ok {
@@ -515,7 +541,7 @@ func (a App) updateSearchBrowse(msg tea.KeyMsg) (App, tea.Cmd) {
 		}
 		return a, nil
 	case "shift+tab", "[":
-		tabs := []viewTab{tabQueue, tabPlaylists}
+		tabs := []viewTab{tabQueue, tabRecent, tabPlaylists}
 		prev := tabs[(int(a.activeTab)+len(tabs)-1)%len(tabs)]
 		a, ok := a.switchTab(prev)
 		if ok {
@@ -731,13 +757,19 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 		}
 		return a, nil
 	case "2":
+		a, ok := a.switchTab(tabRecent)
+		if ok {
+			a.saveUIState()
+		}
+		return a, nil
+	case "3":
 		a, ok := a.switchTab(tabPlaylists)
 		if ok {
 			a.saveUIState()
 		}
 		return a, nil
 	case "tab", "]":
-		tabs := []viewTab{tabQueue, tabPlaylists}
+		tabs := []viewTab{tabQueue, tabRecent, tabPlaylists}
 		next := tabs[(int(a.activeTab)+1)%len(tabs)]
 		a, ok := a.switchTab(next)
 		if ok {
@@ -745,7 +777,7 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 		}
 		return a, nil
 	case "shift+tab", "[":
-		tabs := []viewTab{tabQueue, tabPlaylists}
+		tabs := []viewTab{tabQueue, tabRecent, tabPlaylists}
 		prev := tabs[(int(a.activeTab)+len(tabs)-1)%len(tabs)]
 		a, ok := a.switchTab(prev)
 		if ok {
@@ -763,6 +795,16 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 				a.queueScrollOffset = a.queueCursor
 			}
 		}
+		if a.activeTab == tabRecent && a.recentCursor > 0 {
+			a.recentCursor--
+			visibleRows := a.height - 12
+			if visibleRows < 1 {
+				visibleRows = 1
+			}
+			if a.recentCursor < a.recentScrollOffset {
+				a.recentScrollOffset = a.recentCursor
+			}
+		}
 		if a.activeTab == tabPlaylists && a.playlistCursor > 0 {
 			a.playlistCursor--
 		}
@@ -778,6 +820,19 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 				a.queueScrollOffset = a.queueCursor - visibleRows + 1
 			}
 		}
+		if a.activeTab == tabRecent && a.recent != nil {
+			tracks := a.recent.List()
+			if a.recentCursor < len(tracks)-1 {
+				a.recentCursor++
+				visibleRows := a.height - 12
+				if visibleRows < 1 {
+					visibleRows = 1
+				}
+				if a.recentCursor >= a.recentScrollOffset+visibleRows {
+					a.recentScrollOffset = a.recentCursor - visibleRows + 1
+				}
+			}
+		}
 		if a.activeTab == tabPlaylists && a.playlistCursor < len(a.playlistNames)-1 {
 			a.playlistCursor++
 		}
@@ -785,6 +840,12 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 	case "enter":
 		if a.activeTab == tabQueue && len(a.tracklist) > 0 {
 			return a.playPos(a.queueCursor)
+		}
+		if a.activeTab == tabRecent && a.recent != nil {
+			tracks := a.recent.List()
+			if len(tracks) > 0 && a.recentCursor < len(tracks) {
+				return a.addAndPlay(&tracks[a.recentCursor])
+			}
 		}
 		if a.activeTab == tabPlaylists && len(a.playlistNames) > 0 {
 			name := a.playlistNames[a.playlistCursor]
@@ -912,6 +973,13 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 		a = a.withStatus(fmt.Sprintf("Restored: %s", title))
 		return a, nil
 	case "a":
+		if a.activeTab == tabRecent && a.recent != nil {
+			tracks := a.recent.List()
+			if len(tracks) > 0 && a.recentCursor < len(tracks) {
+				a = a.withQueueAdd(tracks[a.recentCursor])
+			}
+			return a, nil
+		}
 		if a.activeTab == tabPlaylists && len(a.playlistNames) > 0 {
 			name := a.playlistNames[a.playlistCursor]
 			tracks, err := a.playlists.Load(name)
@@ -1129,6 +1197,10 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 				a.queueCursor = 0
 				a.queueScrollOffset = 0
 			}
+			if a.activeTab == tabRecent {
+				a.recentCursor = 0
+				a.recentScrollOffset = 0
+			}
 			return a, nil
 		}
 		a.pendingG = true
@@ -1151,6 +1223,18 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 				a.queueScrollOffset = a.queueCursor - visibleRows + 1
 			}
 		}
+		if a.activeTab == tabRecent && a.recent != nil {
+			tracks := a.recent.List()
+			if len(tracks) > 0 {
+				a.recentCursor += halfPage
+				if a.recentCursor >= len(tracks) {
+					a.recentCursor = len(tracks) - 1
+				}
+				if a.recentCursor >= a.recentScrollOffset+visibleRows {
+					a.recentScrollOffset = a.recentCursor - visibleRows + 1
+				}
+			}
+		}
 		return a, nil
 	case "ctrl+u":
 		visibleRows := a.height - 12
@@ -1170,6 +1254,15 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 				a.queueScrollOffset = a.queueCursor
 			}
 		}
+		if a.activeTab == tabRecent {
+			a.recentCursor -= halfPage
+			if a.recentCursor < 0 {
+				a.recentCursor = 0
+			}
+			if a.recentCursor < a.recentScrollOffset {
+				a.recentScrollOffset = a.recentCursor
+			}
+		}
 		return a, nil
 	case "G":
 		visibleRows := a.height - 12
@@ -1182,11 +1275,24 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 				a.queueScrollOffset = a.queueCursor - visibleRows + 1
 			}
 		}
+		if a.activeTab == tabRecent && a.recent != nil {
+			tracks := a.recent.List()
+			if len(tracks) > 0 {
+				a.recentCursor = len(tracks) - 1
+				if a.recentCursor >= a.recentScrollOffset+visibleRows {
+					a.recentScrollOffset = a.recentCursor - visibleRows + 1
+				}
+			}
+		}
 		return a, nil
 	case "home", "ctrl+a":
 		if a.activeTab == tabQueue {
 			a.queueCursor = 0
 			a.queueScrollOffset = 0
+		}
+		if a.activeTab == tabRecent {
+			a.recentCursor = 0
+			a.recentScrollOffset = 0
 		}
 		return a, nil
 	case "t":
@@ -1481,15 +1587,17 @@ func (a App) execCommand(input string) (App, tea.Cmd) {
 			switch args[0] {
 			case "queue", "1":
 				target = tabQueue
-			case "playlists", "2":
+			case "recent", "2":
+				target = tabRecent
+			case "playlists", "3":
 				target = tabPlaylists
 			default:
-				return a.withStatus("Usage: tab queue|playlists"), nil
+				return a.withStatus("Usage: tab queue|recent|playlists"), nil
 			}
 			a, _ = a.switchTab(target)
 			return a, nil
 		}
-		return a.withStatus("Usage: tab queue|playlists"), nil
+		return a.withStatus("Usage: tab queue|recent|playlists"), nil
 	case "help":
 		a.mode = modeHelp
 		return a, nil
@@ -1878,6 +1986,16 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					a.queueScrollOffset = a.queueCursor
 				}
 			}
+			if a.activeTab == tabRecent && a.recentCursor > 0 {
+				a.recentCursor--
+				visibleRows := a.height - 12
+				if visibleRows < 1 {
+					visibleRows = 1
+				}
+				if a.recentCursor < a.recentScrollOffset {
+					a.recentScrollOffset = a.recentCursor
+				}
+			}
 		case tea.MouseButtonWheelDown:
 			if a.activeTab == tabQueue && a.queueCursor < len(a.tracklist)-1 {
 				a.queueCursor++
@@ -1889,12 +2007,27 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					a.queueScrollOffset = a.queueCursor - visibleRows + 1
 				}
 			}
+			if a.activeTab == tabRecent && a.recent != nil {
+				tracks := a.recent.List()
+				if a.recentCursor < len(tracks)-1 {
+					a.recentCursor++
+					visibleRows := a.height - 12
+					if visibleRows < 1 {
+						visibleRows = 1
+					}
+					if a.recentCursor >= a.recentScrollOffset+visibleRows {
+						a.recentScrollOffset = a.recentCursor - visibleRows + 1
+					}
+				}
+			}
 		case tea.MouseButtonLeft:
 			// Tab bar is at row 2 (0-indexed)
 			if msg.Y == 2 {
 				var target viewTab
 				if msg.X < 15 {
 					target = tabQueue
+				} else if msg.X < 26 {
+					target = tabRecent
 				} else {
 					target = tabPlaylists
 				}
@@ -2109,8 +2242,15 @@ func (a App) renderTabBar() string {
 			plLabel = fmt.Sprintf("Playlists(%d)", len(names))
 		}
 	}
+	recentLabel := "Recent"
+	if a.recent != nil {
+		if n := len(a.recent.List()); n > 0 {
+			recentLabel = fmt.Sprintf("Recent(%d)", n)
+		}
+	}
 	tabs := []tabEntry{
 		{"Queue", tabQueue},
+		{recentLabel, tabRecent},
 		{plLabel, tabPlaylists},
 	}
 
@@ -2281,6 +2421,60 @@ func (a App) renderQueueView() string {
 	return s
 }
 
+
+func (a App) renderRecentView() string {
+	if a.recent == nil {
+		return dimStyle.Render("  Recent unavailable.")
+	}
+	tracks := a.recent.List()
+	if len(tracks) == 0 {
+		return dimStyle.Render("  No recently played tracks yet.")
+	}
+
+	visibleRows := a.height - 12
+	if visibleRows < 1 {
+		visibleRows = 1
+	}
+
+	tc := computeTrackCols(a.width)
+
+	// Header
+	h := "   " +
+		col("Artist", tc.artist, headerStyle) +
+		col("Title", tc.title, headerStyle)
+	if tc.showAlbum {
+		h += col("Album", tc.album, headerStyle)
+	}
+	if tc.showYear {
+		h += colRight("Year", colYear, headerStyle)
+	}
+	h += colRight("Time", colDuration, headerStyle)
+	s := h + "\n"
+
+	end := a.recentScrollOffset + visibleRows
+	if end > len(tracks) {
+		end = len(tracks)
+	}
+
+	if a.recentScrollOffset > 0 {
+		s += dimStyle.Render(fmt.Sprintf("  ^ %d more above", a.recentScrollOffset)) + "\n"
+	}
+
+	isDownloaded := a.dlCheck()
+	for i := a.recentScrollOffset; i < end; i++ {
+		t := tracks[i]
+		selected := i == a.recentCursor
+		liked := a.likes.IsLiked(t.ID)
+		downloaded := isDownloaded(t)
+		s += trackRow(i, t, selected, liked, downloaded, tc) + "\n"
+	}
+
+	if end < len(tracks) {
+		s += dimStyle.Render(fmt.Sprintf("  v %d more below", len(tracks)-end)) + "\n"
+	}
+
+	return s
+}
 
 func (a App) renderPlaylistsView() string {
 	names := a.playlistNames
@@ -2542,6 +2736,8 @@ func (a App) View() string {
 		switch a.activeTab {
 		case tabQueue:
 			tabContent = a.renderQueueView()
+		case tabRecent:
+			tabContent = a.renderRecentView()
 		case tabPlaylists:
 			tabContent = a.renderPlaylistsView()
 		}
@@ -2574,6 +2770,8 @@ func (a App) contextHelp() string {
 		return dimStyle.Render("  y/enter confirm  n/esc cancel")
 	default:
 		switch a.activeTab {
+		case tabRecent:
+			return dimStyle.Render("  enter play  a queue  P playlist  d download  / search  ? more  q quit")
 		case tabPlaylists:
 			return dimStyle.Render("  enter load  a append  r rename  x delete  / search  ? more  q quit")
 		default:
