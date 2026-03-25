@@ -1574,15 +1574,21 @@ func (a App) renderQueueView() string {
 			marker = titleStyle.Render("●")
 		}
 
+		// Prepend album track number to title when available
+		titleText := t.Title
+		if t.TrackNumber > 0 {
+			titleText = fmt.Sprintf("%02d. %s", t.TrackNumber, t.Title)
+		}
+
 		var row string
 		if tc.artist == 0 {
 			// Ultra-narrow: title only
-			row = marker + icons + col(t.Title, tc.title, titSt)
+			row = marker + icons + col(titleText, tc.title, titSt)
 		} else {
 			row = marker + icons +
 				colRight(num, colNum, numSt) +
 				col(t.Artist.Name, tc.artist, artSt) +
-				col(t.Title, tc.title, titSt)
+				col(titleText, tc.title, titSt)
 			if tc.showAlbum {
 				row += col(t.Album.Title, tc.album, albSt)
 			}
