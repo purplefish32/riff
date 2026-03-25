@@ -927,6 +927,11 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 			}
 		}
 		return a, nil
+	case "u":
+		if target := a.targetTrackOrNowPlaying(); target != nil {
+			openBrowser(fmt.Sprintf("https://monochrome.tf/album/%d", target.Album.ID))
+		}
+		return a, nil
 	case "Q":
 		a.quality = (a.quality + 1) % len(qualities)
 		a.config.Quality = qualities[a.quality]
