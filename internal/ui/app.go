@@ -918,6 +918,13 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 			}
 			a.saveTracks = tracks
 		} else if a.activeTab == tabQueue && len(a.tracklist) > 0 {
+			// Quick-save: if playing a playlist, auto-save without popup
+			if a.activePlaylist != "" {
+				a.playlists.Save(a.activePlaylist, a.tracklist)
+				a = a.refreshPlaylists()
+				a = a.withStatus(fmt.Sprintf("Saved: %s (%d tracks)", a.activePlaylist, len(a.tracklist)))
+				return a, nil
+			}
 			a.saveTracks = a.tracklist
 		} else {
 			return a, nil
