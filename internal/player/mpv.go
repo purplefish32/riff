@@ -196,6 +196,26 @@ func (p *Player) Seek(seconds float64) error {
 	return err
 }
 
+// GetAudioFormat returns the audio format string (e.g. "flac", "s16").
+func (p *Player) GetAudioFormat() (string, error) {
+	resp, err := p.command("get_property", "audio-params/format")
+	if err != nil {
+		return "", err
+	}
+	format, _ := resp.Data.(string)
+	return format, nil
+}
+
+// GetSampleRate returns the audio sample rate in Hz.
+func (p *Player) GetSampleRate() (int, error) {
+	resp, err := p.command("get_property", "audio-params/samplerate")
+	if err != nil {
+		return 0, err
+	}
+	rate, _ := resp.Data.(float64)
+	return int(rate), nil
+}
+
 // WaitForEnd blocks until the current track finishes.
 func (p *Player) WaitForEnd() {
 	<-p.onEnd

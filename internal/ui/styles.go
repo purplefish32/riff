@@ -28,6 +28,7 @@ var (
 	accentColor     lipgloss.Color
 	selectionStripe lipgloss.Style
 	activeTabStyle  lipgloss.Style
+	altRowBg        lipgloss.Style
 )
 
 func init() {
@@ -48,6 +49,7 @@ func init() {
 		overlayBorder = plain.Border(lipgloss.RoundedBorder())
 		selectionStripe = plain.Bold(true)
 		activeTabStyle = plain.Bold(true).Underline(true)
+		altRowBg = plain
 		return
 	}
 
@@ -107,4 +109,7 @@ func init() {
 		Bold(true).
 		Foreground(accentColor).
 		Underline(true)
+
+	altRowBg = lipgloss.NewStyle().
+		Background(lipgloss.Color("#1A1A2E"))
 }

@@ -71,8 +71,9 @@ func main() {
 	}
 
 	qs := persistence.NewQueueStore()
+	pc := persistence.NewPlayCountStore()
 
-	app := ui.NewApp(client, p, likes, dl, cfg, qs)
+	app := ui.NewApp(client, p, likes, dl, cfg, qs, pc)
 	prog := tea.NewProgram(app, tea.WithAltScreen(), tea.WithMouseCellMotion())
 
 	dl.SetOnUpdate(func() {
