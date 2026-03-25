@@ -133,6 +133,7 @@ type App struct {
 	addToPickerNames []string
 	addToPickerIdx   int
 	addToCreating    bool
+	pendingDelete    bool
 }
 
 func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedStore, dl *downloader.Downloader, cfg *persistence.Config, qs *persistence.QueueStore, pc *persistence.PlayCountStore, ps *persistence.PlaylistStore) App {
@@ -720,6 +721,10 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 	if msg.String() != "g" && a.pendingG {
 		a.pendingG = false
 	}
+	// Clear pending delete on any non-x key
+	if msg.String() != "x" && a.pendingDelete {
+		a.pendingDelete = false
+	}
 	switch msg.String() {
 	case "ctrl+c", "q":
 		return a, tea.Quit
@@ -833,12 +838,18 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 	case "x":
 		if a.activeTab == tabPlaylists && len(a.playlistNames) > 0 {
 			name := a.playlistNames[a.playlistCursor]
-			a.playlists.Delete(name)
-			a = a.refreshPlaylists()
-			if a.playlistCursor >= len(a.playlistNames) && a.playlistCursor > 0 {
-				a.playlistCursor--
+			if a.pendingDelete {
+				a.pendingDelete = false
+				a.playlists.Delete(name)
+				a = a.refreshPlaylists()
+				if a.playlistCursor >= len(a.playlistNames) && a.playlistCursor > 0 {
+					a.playlistCursor--
+				}
+				a = a.withStatus(fmt.Sprintf("Deleted: %s", name))
+			} else {
+				a.pendingDelete = true
+				a = a.withStatus(fmt.Sprintf("Press x again to delete: %s", name))
 			}
-			a = a.withStatus(fmt.Sprintf("Deleted: %s", name))
 			return a, nil
 		}
 		if a.activeTab != tabQueue || len(a.tracklist) == 0 {
