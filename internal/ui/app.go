@@ -54,7 +54,6 @@ type viewTab int
 
 const (
 	tabQueue viewTab = iota
-	tabLiked
 	tabDownloads
 	tabPlaylists
 )
@@ -83,10 +82,8 @@ type App struct {
 	nowPlaying       nowPlayingModel
 	tracklist        []types.Track
 	trackPos         int // index of currently playing track, -1 if none
-	likedCursor      int
 	queueCursor      int // cursor for browsing the queue view
 	queueScrollOffset int
-	likedScrollOffset int
 	undoTrack        *types.Track
 	undoPos          int
 	undoTrackPos     int
@@ -149,13 +146,6 @@ func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedS
 	if queueCursor < 0 {
 		queueCursor = 0
 	}
-	likedCursor := qs.LikedCursor
-	if likedCursor >= len(likes.Tracks) && likedCursor > 0 {
-		likedCursor = len(likes.Tracks) - 1
-	}
-	if likedCursor < 0 {
-		likedCursor = 0
-	}
 	sm := newSearchModel()
 	if mode == modeSearchInput {
 		sm.input.Focus()
@@ -179,7 +169,6 @@ func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedS
 		quality:         cfg.QualityIndex(),
 		volume:          cfg.Volume,
 		queueCursor:     queueCursor,
-		likedCursor:     likedCursor,
 		selected:        make(map[int]bool),
 		cmdInput:        newCmdInput(),
 		online:          true,
@@ -311,7 +300,7 @@ func (a App) saveQueue() {
 }
 
 func (a App) saveUIState() {
-	a.queueStore.SaveUIState(int(a.activeTab), a.queueCursor, a.likedCursor)
+	a.queueStore.SaveUIState(int(a.activeTab), a.queueCursor, 0)
 }
 
 const maxTracklist = 500
@@ -371,10 +360,6 @@ func (a App) targetTrack() *types.Track {
 		case tabQueue:
 			if len(a.tracklist) > 0 {
 				return &a.tracklist[a.queueCursor]
-			}
-		case tabLiked:
-			if len(a.likes.Tracks) > 0 {
-				return &a.likes.Tracks[a.likedCursor]
 			}
 		}
 	}
@@ -515,18 +500,12 @@ func (a App) updateSearchBrowse(msg tea.KeyMsg) (App, tea.Cmd) {
 		}
 		return a, nil
 	case "2":
-		a, ok := a.switchTab(tabLiked)
-		if ok {
-			a.mode = modeNormal
-		}
-		return a, nil
-	case "3":
 		a, ok := a.switchTab(tabDownloads)
 		if ok {
 			a.mode = modeNormal
 		}
 		return a, nil
-	case "4":
+	case "3":
 		a, ok := a.switchTab(tabPlaylists)
 		if ok {
 			a.mode = modeNormal
@@ -741,18 +720,12 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 		}
 		return a, nil
 	case "2":
-		a, ok := a.switchTab(tabLiked)
-		if ok {
-			a.saveUIState()
-		}
-		return a, nil
-	case "3":
 		a, ok := a.switchTab(tabDownloads)
 		if ok {
 			a.saveUIState()
 		}
 		return a, nil
-	case "4":
+	case "3":
 		a, ok := a.switchTab(tabPlaylists)
 		if ok {
 			a.saveUIState()
@@ -767,16 +740,6 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 			}
 			if a.queueCursor < a.queueScrollOffset {
 				a.queueScrollOffset = a.queueCursor
-			}
-		}
-		if a.activeTab == tabLiked && a.likedCursor > 0 {
-			a.likedCursor--
-			visibleRows := a.height - 12
-			if visibleRows < 1 {
-				visibleRows = 1
-			}
-			if a.likedCursor < a.likedScrollOffset {
-				a.likedScrollOffset = a.likedCursor
 			}
 		}
 		if a.activeTab == tabPlaylists && a.playlistCursor > 0 {
@@ -794,16 +757,6 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 				a.queueScrollOffset = a.queueCursor - visibleRows + 1
 			}
 		}
-		if a.activeTab == tabLiked && a.likedCursor < len(a.likes.Tracks)-1 {
-			a.likedCursor++
-			visibleRows := a.height - 12
-			if visibleRows < 1 {
-				visibleRows = 1
-			}
-			if a.likedCursor >= a.likedScrollOffset+visibleRows {
-				a.likedScrollOffset = a.likedCursor - visibleRows + 1
-			}
-		}
 		if a.activeTab == tabPlaylists && a.playlistCursor < len(a.playlistNames)-1 {
 			a.playlistCursor++
 		}
@@ -811,10 +764,6 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 	case "enter":
 		if a.activeTab == tabQueue && len(a.tracklist) > 0 {
 			return a.playPos(a.queueCursor)
-		}
-		if a.activeTab == tabLiked && len(a.likes.Tracks) > 0 {
-			track := a.likes.Tracks[a.likedCursor]
-			return a.addAndPlay(&track)
 		}
 		if a.activeTab == tabPlaylists && len(a.playlistNames) > 0 {
 			name := a.playlistNames[a.playlistCursor]
@@ -942,20 +891,6 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 		a = a.withStatus(fmt.Sprintf("Restored: %s", title))
 		return a, nil
 	case "a":
-		if a.activeTab == tabLiked && len(a.likes.Tracks) > 0 {
-			if len(a.selected) > 0 {
-				var toQueue []types.Track
-				for _, t := range a.likes.Tracks {
-					if a.selected[t.ID] {
-						toQueue = append(toQueue, t)
-					}
-				}
-				a.selected = make(map[int]bool)
-				a = a.withQueueAddAll(toQueue)
-			} else {
-				a = a.withQueueAdd(a.likes.Tracks[a.likedCursor])
-			}
-		}
 		if a.activeTab == tabPlaylists && len(a.playlistNames) > 0 {
 			name := a.playlistNames[a.playlistCursor]
 			tracks, err := a.playlists.Load(name)
@@ -1101,13 +1036,6 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 			} else {
 				a.selected[a.queueCursor] = true
 			}
-		} else if a.activeTab == tabLiked && len(a.likes.Tracks) > 0 {
-			id := a.likes.Tracks[a.likedCursor].ID
-			if a.selected[id] {
-				delete(a.selected, id)
-			} else {
-				a.selected[id] = true
-			}
 		}
 		return a, nil
 	case "V":
@@ -1128,21 +1056,6 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 			} else {
 				for i := range a.tracklist {
 					a.selected[i] = true
-				}
-			}
-		} else if a.activeTab == tabLiked {
-			allSelected := len(a.likes.Tracks) > 0
-			for _, t := range a.likes.Tracks {
-				if !a.selected[t.ID] {
-					allSelected = false
-					break
-				}
-			}
-			if allSelected {
-				a.selected = make(map[int]bool)
-			} else {
-				for _, t := range a.likes.Tracks {
-					a.selected[t.ID] = true
 				}
 			}
 		}
@@ -1178,7 +1091,7 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 		a = a.withStatus(fmt.Sprintf("Quality: %s", qualities[a.quality]))
 		return a, nil
 	case "f":
-		if a.activeTab == tabQueue || a.activeTab == tabLiked {
+		if a.activeTab == tabQueue {
 			a.mode = modeFilter
 			a.filterInput.Reset()
 			a.filterText = ""
@@ -1194,10 +1107,6 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 			if a.activeTab == tabQueue {
 				a.queueCursor = 0
 				a.queueScrollOffset = 0
-			}
-			if a.activeTab == tabLiked {
-				a.likedCursor = 0
-				a.likedScrollOffset = 0
 			}
 			return a, nil
 		}
@@ -1221,15 +1130,6 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 				a.queueScrollOffset = a.queueCursor - visibleRows + 1
 			}
 		}
-		if a.activeTab == tabLiked && len(a.likes.Tracks) > 0 {
-			a.likedCursor += halfPage
-			if a.likedCursor >= len(a.likes.Tracks) {
-				a.likedCursor = len(a.likes.Tracks) - 1
-			}
-			if a.likedCursor >= a.likedScrollOffset+visibleRows {
-				a.likedScrollOffset = a.likedCursor - visibleRows + 1
-			}
-		}
 		return a, nil
 	case "ctrl+u":
 		visibleRows := a.height - 12
@@ -1249,15 +1149,6 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 				a.queueScrollOffset = a.queueCursor
 			}
 		}
-		if a.activeTab == tabLiked {
-			a.likedCursor -= halfPage
-			if a.likedCursor < 0 {
-				a.likedCursor = 0
-			}
-			if a.likedCursor < a.likedScrollOffset {
-				a.likedScrollOffset = a.likedCursor
-			}
-		}
 		return a, nil
 	case "G":
 		visibleRows := a.height - 12
@@ -1270,21 +1161,11 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 				a.queueScrollOffset = a.queueCursor - visibleRows + 1
 			}
 		}
-		if a.activeTab == tabLiked && len(a.likes.Tracks) > 0 {
-			a.likedCursor = len(a.likes.Tracks) - 1
-			if a.likedCursor >= a.likedScrollOffset+visibleRows {
-				a.likedScrollOffset = a.likedCursor - visibleRows + 1
-			}
-		}
 		return a, nil
 	case "home", "ctrl+a":
 		if a.activeTab == tabQueue {
 			a.queueCursor = 0
 			a.queueScrollOffset = 0
-		}
-		if a.activeTab == tabLiked {
-			a.likedCursor = 0
-			a.likedScrollOffset = 0
 		}
 		return a, nil
 	case "t":
@@ -1449,11 +1330,6 @@ func (a App) execCommand(input string) (App, tea.Cmd) {
 					if a.queueCursor >= a.queueScrollOffset+visibleRows {
 						a.queueScrollOffset = a.queueCursor - visibleRows + 1
 					}
-				} else if a.activeTab == tabLiked {
-					if idx >= len(a.likes.Tracks) {
-						idx = len(a.likes.Tracks) - 1
-					}
-					a.likedCursor = idx
 				}
 				return a.withStatus(fmt.Sprintf("Line %d", line)), nil
 			}
@@ -1578,19 +1454,17 @@ func (a App) execCommand(input string) (App, tea.Cmd) {
 			switch args[0] {
 			case "queue", "1":
 				target = tabQueue
-			case "liked", "2":
-				target = tabLiked
-			case "downloads", "3":
+			case "downloads", "2":
 				target = tabDownloads
-			case "playlists", "4":
+			case "playlists", "3":
 				target = tabPlaylists
 			default:
-				return a.withStatus("Usage: tab queue|liked|downloads|playlists"), nil
+				return a.withStatus("Usage: tab queue|downloads|playlists"), nil
 			}
 			a, _ = a.switchTab(target)
 			return a, nil
 		}
-		return a.withStatus("Usage: tab queue|liked|downloads|playlists"), nil
+		return a.withStatus("Usage: tab queue|downloads|playlists"), nil
 	case "help":
 		a.mode = modeHelp
 		return a, nil
@@ -1855,13 +1729,6 @@ func (a App) computeFilteredIndices() App {
 				a.filteredIndices = append(a.filteredIndices, i)
 			}
 		}
-	case tabLiked:
-		for i, t := range a.likes.Tracks {
-			if strings.Contains(strings.ToLower(t.Title), query) ||
-				strings.Contains(strings.ToLower(t.Artist.Name), query) {
-				a.filteredIndices = append(a.filteredIndices, i)
-			}
-		}
 	}
 	return a
 }
@@ -1879,38 +1746,21 @@ func (a App) updateFilter(msg tea.KeyMsg) (App, tea.Cmd) {
 		if len(a.filteredIndices) > 0 {
 			// find current cursor position in filtered list and move up
 			cursorIdx := -1
-			var cursor int
-			if a.activeTab == tabQueue {
-				cursor = a.queueCursor
-			} else {
-				cursor = a.likedCursor
-			}
 			for fi, idx := range a.filteredIndices {
-				if idx == cursor {
+				if idx == a.queueCursor {
 					cursorIdx = fi
 					break
 				}
 			}
 			if cursorIdx > 0 {
 				newIdx := a.filteredIndices[cursorIdx-1]
-				if a.activeTab == tabQueue {
-					a.queueCursor = newIdx
-					visibleRows := a.height - 12
-					if visibleRows < 1 {
-						visibleRows = 1
-					}
-					if a.queueCursor < a.queueScrollOffset {
-						a.queueScrollOffset = a.queueCursor
-					}
-				} else {
-					a.likedCursor = newIdx
-					visibleRows := a.height - 12
-					if visibleRows < 1 {
-						visibleRows = 1
-					}
-					if a.likedCursor < a.likedScrollOffset {
-						a.likedScrollOffset = a.likedCursor
-					}
+				a.queueCursor = newIdx
+				visibleRows := a.height - 12
+				if visibleRows < 1 {
+					visibleRows = 1
+				}
+				if a.queueCursor < a.queueScrollOffset {
+					a.queueScrollOffset = a.queueCursor
 				}
 			}
 		}
@@ -1918,20 +1768,11 @@ func (a App) updateFilter(msg tea.KeyMsg) (App, tea.Cmd) {
 	case "down", "j":
 		if len(a.filteredIndices) > 0 {
 			cursorIdx := -1
-			var cursor int
-			if a.activeTab == tabQueue {
-				cursor = a.queueCursor
-			} else {
-				cursor = a.likedCursor
-			}
 			for fi, idx := range a.filteredIndices {
-				if idx == cursor {
+				if idx == a.queueCursor {
 					cursorIdx = fi
 					break
 				}
-			}
-			if cursorIdx == -1 {
-				cursorIdx = -1 // will move to first
 			}
 			nextFI := cursorIdx + 1
 			if nextFI < len(a.filteredIndices) {
@@ -1940,16 +1781,9 @@ func (a App) updateFilter(msg tea.KeyMsg) (App, tea.Cmd) {
 				if visibleRows < 1 {
 					visibleRows = 1
 				}
-				if a.activeTab == tabQueue {
-					a.queueCursor = newIdx
-					if a.queueCursor >= a.queueScrollOffset+visibleRows {
-						a.queueScrollOffset = a.queueCursor - visibleRows + 1
-					}
-				} else {
-					a.likedCursor = newIdx
-					if a.likedCursor >= a.likedScrollOffset+visibleRows {
-						a.likedScrollOffset = a.likedCursor - visibleRows + 1
-					}
+				a.queueCursor = newIdx
+				if a.queueCursor >= a.queueScrollOffset+visibleRows {
+					a.queueScrollOffset = a.queueCursor - visibleRows + 1
 				}
 			}
 		}
@@ -1960,12 +1794,6 @@ func (a App) updateFilter(msg tea.KeyMsg) (App, tea.Cmd) {
 			a.mode = modeNormal
 			a.filterInput.Blur()
 			return a.playPos(a.queueCursor)
-		}
-		if a.activeTab == tabLiked && len(a.likes.Tracks) > 0 {
-			a.mode = modeNormal
-			a.filterInput.Blur()
-			track := a.likes.Tracks[a.likedCursor]
-			return a.addAndPlay(&track)
 		}
 		return a, nil
 	}
@@ -1994,14 +1822,6 @@ func (a App) updateFilter(msg tea.KeyMsg) (App, tea.Cmd) {
 			}
 			if a.queueCursor < a.queueScrollOffset {
 				a.queueScrollOffset = a.queueCursor
-			}
-		} else if a.activeTab == tabLiked {
-			a.likedCursor = newIdx
-			if a.likedCursor >= a.likedScrollOffset+visibleRows {
-				a.likedScrollOffset = a.likedCursor - visibleRows + 1
-			}
-			if a.likedCursor < a.likedScrollOffset {
-				a.likedScrollOffset = a.likedCursor
 			}
 		}
 	}
@@ -2033,16 +1853,6 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					a.queueScrollOffset = a.queueCursor
 				}
 			}
-			if a.activeTab == tabLiked && a.likedCursor > 0 {
-				a.likedCursor--
-				visibleRows := a.height - 12
-				if visibleRows < 1 {
-					visibleRows = 1
-				}
-				if a.likedCursor < a.likedScrollOffset {
-					a.likedScrollOffset = a.likedCursor
-				}
-			}
 		case tea.MouseButtonWheelDown:
 			if a.activeTab == tabQueue && a.queueCursor < len(a.tracklist)-1 {
 				a.queueCursor++
@@ -2054,25 +1864,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					a.queueScrollOffset = a.queueCursor - visibleRows + 1
 				}
 			}
-			if a.activeTab == tabLiked && a.likedCursor < len(a.likes.Tracks)-1 {
-				a.likedCursor++
-				visibleRows := a.height - 12
-				if visibleRows < 1 {
-					visibleRows = 1
-				}
-				if a.likedCursor >= a.likedScrollOffset+visibleRows {
-					a.likedScrollOffset = a.likedCursor - visibleRows + 1
-				}
-			}
 		case tea.MouseButtonLeft:
 			// Tab bar is at row 2 (0-indexed)
 			if msg.Y == 2 {
 				var target viewTab
 				if msg.X < 15 {
 					target = tabQueue
-				} else if msg.X < 28 {
-					target = tabLiked
-				} else if msg.X < 44 {
+				} else if msg.X < 30 {
 					target = tabDownloads
 				} else {
 					target = tabPlaylists
@@ -2090,11 +1888,6 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						idx := a.queueScrollOffset + contentRow
 						if idx >= 0 && idx < len(a.tracklist) {
 							a.queueCursor = idx
-						}
-					} else if a.activeTab == tabLiked {
-						idx := a.likedScrollOffset + contentRow
-						if idx >= 0 && idx < len(a.likes.Tracks) {
-							a.likedCursor = idx
 						}
 					}
 				}
@@ -2294,15 +2087,14 @@ func (a App) renderTabBar() string {
 	}
 	tabs := []tabEntry{
 		{"1:Queue", tabQueue},
-		{"2:Liked", tabLiked},
 	}
 	if a.hasDownloadActivity() {
-		tabs = append(tabs, tabEntry{"3:Downloads", tabDownloads})
+		tabs = append(tabs, tabEntry{"2:Downloads", tabDownloads})
 	}
-	plLabel := "4:Playlists"
+	plLabel := "3:Playlists"
 	if a.playlists != nil {
 		if names := a.playlists.List(); len(names) > 0 {
-			plLabel = fmt.Sprintf("4:Playlists(%d)", len(names))
+			plLabel = fmt.Sprintf("3:Playlists(%d)", len(names))
 		}
 	}
 	tabs = append(tabs, tabEntry{plLabel, tabPlaylists})
@@ -2323,9 +2115,6 @@ func (a App) renderTabBar() string {
 			} else {
 				label = fmt.Sprintf("1:Queue(%d)", len(a.tracklist))
 			}
-		}
-		if t.tab == tabLiked && len(a.likes.Tracks) > 0 {
-			label = fmt.Sprintf("2:Liked(%d)", len(a.likes.Tracks))
 		}
 		if selCount > 0 && t.tab == a.activeTab {
 			label += fmt.Sprintf(" [%d sel]", selCount)
@@ -2477,57 +2266,6 @@ func (a App) renderQueueView() string {
 	return s
 }
 
-func (a App) renderLikedView() string {
-	if len(a.likes.Tracks) == 0 {
-		return dimStyle.Render("  No liked tracks yet. Press 'l' on a track to like it.")
-	}
-
-	visibleRows := a.height - 12
-	if visibleRows < 1 {
-		visibleRows = 1
-	}
-
-	tc := computeTrackCols(a.width)
-	s := ""
-	if a.mode == modeFilter {
-		s += "  " + a.filterInput.View() + "\n"
-	}
-	s += trackHeader(tc) + "\n"
-
-	end := a.likedScrollOffset + visibleRows
-	if end > len(a.likes.Tracks) {
-		end = len(a.likes.Tracks)
-	}
-
-	if a.likedScrollOffset > 0 {
-		s += dimStyle.Render(fmt.Sprintf("  ^ %d more above", a.likedScrollOffset)) + "\n"
-	}
-
-	for displayIdx, i := 0, a.likedScrollOffset; i < end; i, displayIdx = i+1, displayIdx+1 {
-		t := a.likes.Tracks[i]
-		isCursor := i == a.likedCursor
-		isMatch := a.isFilterMatch(i)
-		// When filter is active and this track doesn't match, show dimmed
-		if !isMatch {
-			row := trackRow(i, t, false, true, a.dl != nil && a.dl.IsDownloaded(t), tc)
-			row = dimStyle.Render(row)
-			s += row + "\n"
-			continue
-		}
-		row := trackRow(i, t, isCursor, true, a.dl != nil && a.dl.IsDownloaded(t), tc)
-		if a.selected[t.ID] {
-			// Replace leading space/cursor with selection marker
-			row = titleStyle.Render("●") + row[1:]
-		}
-		s += row + "\n"
-	}
-
-	if end < len(a.likes.Tracks) {
-		s += dimStyle.Render(fmt.Sprintf("  v %d more below", len(a.likes.Tracks)-end)) + "\n"
-	}
-
-	return s
-}
 
 func (a App) renderDownloadsView() string {
 	if a.dl == nil {
@@ -2762,7 +2500,7 @@ func (a App) View() string {
 			Padding(1, 2).
 			Render(
 				titleStyle.Render("Keybindings") + "\n\n" +
-					helpLine("1-4", "Switch tabs") +
+					helpLine("1-3", "Switch tabs") +
 					helpLine("/", "Focus search") +
 					helpLine("tab", "Toggle track/album/artist search") +
 					helpLine("enter", "Play track / browse album") +
@@ -2824,8 +2562,6 @@ func (a App) View() string {
 		switch a.activeTab {
 		case tabQueue:
 			tabContent = a.renderQueueView()
-		case tabLiked:
-			tabContent = a.renderLikedView()
 		case tabDownloads:
 			tabContent = a.renderDownloadsView()
 		case tabPlaylists:
@@ -2860,8 +2596,6 @@ func (a App) contextHelp() string {
 		return dimStyle.Render("  y/enter confirm  n/esc cancel")
 	default:
 		switch a.activeTab {
-		case tabLiked:
-			return dimStyle.Render("  enter play  a queue  l unlike  / search  ? more  q quit")
 		case tabDownloads:
 			return dimStyle.Render("  r retry  / search  ? more  q quit")
 		case tabPlaylists:
