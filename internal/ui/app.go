@@ -47,6 +47,8 @@ var qualities = []string{"LOW", "HIGH", "LOSSLESS", "HI_RES"}
 
 var spinnerFrames = []string{"▁", "▂", "▃", "▄", "▅", "▆", "▇", "█", "▇", "▆", "▅", "▄", "▃", "▂"}
 
+var vuBars = []string{"▁", "▂", "▃", "▄", "▅", "▆", "▇"}
+
 type tickMsg struct{}
 
 type viewTab int
@@ -116,6 +118,7 @@ type App struct {
 	showPlayCounts   bool
 	showAlbumArt     bool
 	audioInfo        string
+	vuLevels         [5]int
 }
 
 func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedStore, dl *downloader.Downloader, cfg *persistence.Config, qs *persistence.QueueStore, pc *persistence.PlayCountStore, ps *persistence.PlaylistStore) App {
@@ -348,6 +351,12 @@ func (a App) syncNowPlaying() App {
 		a.nowPlaying.liked = a.likes.IsLiked(a.nowPlaying.track.ID)
 		a.nowPlaying.coverID = a.nowPlaying.track.Album.Cover
 	}
+	// Build VU meter string
+	var vu strings.Builder
+	for _, level := range a.vuLevels {
+		vu.WriteString(titleStyle.Render(vuBars[level]))
+	}
+	a.nowPlaying.vuMeter = vu.String()
 	return a
 }
 
@@ -1675,6 +1684,26 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		a.tickCount++
 		a.spinnerIdx = (a.spinnerIdx + 1) % len(spinnerFrames)
+		// Animate VU meter every tick
+		if a.nowPlaying.track != nil && !a.nowPlaying.paused {
+			for i := range a.vuLevels {
+				delta := rand.Intn(3) - 1 // -1, 0, or +1
+				a.vuLevels[i] += delta
+				if a.vuLevels[i] < 0 {
+					a.vuLevels[i] = 0
+				}
+				if a.vuLevels[i] > 6 {
+					a.vuLevels[i] = 6
+				}
+			}
+		} else {
+			// Decay toward 0 when paused or nothing playing
+			for i := range a.vuLevels {
+				if a.vuLevels[i] > 0 {
+					a.vuLevels[i]--
+				}
+			}
+		}
 		// Every 10th tick (~1 second): update position, status, sync
 		if a.tickCount%10 == 0 {
 			a = a.syncNowPlaying()
