@@ -61,6 +61,7 @@ const (
 	modeSearchBrowse                  // navigating search results
 	modeHelp                          // help overlay
 	modeGotoLine                      // go-to-line popup
+	modeFilter                        // inline filter on queue/liked
 )
 
 type App struct {
@@ -98,6 +99,9 @@ type App struct {
 	statusMsg        string
 	statusTicks      int // ticks remaining before status clears
 	gotoInput        textinput.Model
+	filterInput      textinput.Model
+	filterText       string
+	filteredIndices  []int
 }
 
 func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedStore, dl *downloader.Downloader, cfg *persistence.Config, qs *persistence.QueueStore) App {
@@ -139,6 +143,7 @@ func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedS
 		selected:    make(map[int]bool),
 		online:      true,
 		gotoInput:   newGotoInput(),
+		filterInput: newFilterInput(),
 	}
 }
 
@@ -148,6 +153,15 @@ func newGotoInput() textinput.Model {
 	ti.Prompt = "Go to: "
 	ti.CharLimit = 5
 	ti.Width = 10
+	return ti
+}
+
+func newFilterInput() textinput.Model {
+	ti := textinput.New()
+	ti.Placeholder = "filter..."
+	ti.Prompt = "Filter: "
+	ti.CharLimit = 50
+	ti.Width = 30
 	return ti
 }
 
@@ -872,6 +886,16 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 		a.config.Save()
 		a = a.withStatus(fmt.Sprintf("Quality: %s", qualities[a.quality]))
 		return a, nil
+	case "f":
+		if a.activeTab == tabQueue || a.activeTab == tabLiked {
+			a.mode = modeFilter
+			a.filterInput.Reset()
+			a.filterText = ""
+			a.filteredIndices = nil
+			a.filterInput.Focus()
+			return a, nil
+		}
+		return a, nil
 	case "g":
 		if a.activeTab == tabQueue || a.activeTab == tabLiked {
 			a.mode = modeGotoLine
@@ -1021,6 +1045,175 @@ func (a App) updateGotoLine(msg tea.KeyMsg) (App, tea.Cmd) {
 	return a, cmd
 }
 
+// computeFilteredIndices builds the filteredIndices slice based on filterText
+// and the current tab. Call this any time filterText or the underlying list changes.
+func (a App) computeFilteredIndices() App {
+	query := strings.ToLower(a.filterText)
+	a.filteredIndices = nil
+	if query == "" {
+		return a
+	}
+	switch a.activeTab {
+	case tabQueue:
+		for i, t := range a.tracklist {
+			if strings.Contains(strings.ToLower(t.Title), query) ||
+				strings.Contains(strings.ToLower(t.Artist.Name), query) {
+				a.filteredIndices = append(a.filteredIndices, i)
+			}
+		}
+	case tabLiked:
+		for i, t := range a.likes.Tracks {
+			if strings.Contains(strings.ToLower(t.Title), query) ||
+				strings.Contains(strings.ToLower(t.Artist.Name), query) {
+				a.filteredIndices = append(a.filteredIndices, i)
+			}
+		}
+	}
+	return a
+}
+
+func (a App) updateFilter(msg tea.KeyMsg) (App, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		a.filterInput.Blur()
+		a.filterInput.Reset()
+		a.filterText = ""
+		a.filteredIndices = nil
+		a.mode = modeNormal
+		return a, nil
+	case "up", "k":
+		if len(a.filteredIndices) > 0 {
+			// find current cursor position in filtered list and move up
+			cursorIdx := -1
+			var cursor int
+			if a.activeTab == tabQueue {
+				cursor = a.queueCursor
+			} else {
+				cursor = a.likedCursor
+			}
+			for fi, idx := range a.filteredIndices {
+				if idx == cursor {
+					cursorIdx = fi
+					break
+				}
+			}
+			if cursorIdx > 0 {
+				newIdx := a.filteredIndices[cursorIdx-1]
+				if a.activeTab == tabQueue {
+					a.queueCursor = newIdx
+					visibleRows := a.height - 12
+					if visibleRows < 1 {
+						visibleRows = 1
+					}
+					if a.queueCursor < a.queueScrollOffset {
+						a.queueScrollOffset = a.queueCursor
+					}
+				} else {
+					a.likedCursor = newIdx
+					visibleRows := a.height - 12
+					if visibleRows < 1 {
+						visibleRows = 1
+					}
+					if a.likedCursor < a.likedScrollOffset {
+						a.likedScrollOffset = a.likedCursor
+					}
+				}
+			}
+		}
+		return a, nil
+	case "down", "j":
+		if len(a.filteredIndices) > 0 {
+			cursorIdx := -1
+			var cursor int
+			if a.activeTab == tabQueue {
+				cursor = a.queueCursor
+			} else {
+				cursor = a.likedCursor
+			}
+			for fi, idx := range a.filteredIndices {
+				if idx == cursor {
+					cursorIdx = fi
+					break
+				}
+			}
+			if cursorIdx == -1 {
+				cursorIdx = -1 // will move to first
+			}
+			nextFI := cursorIdx + 1
+			if nextFI < len(a.filteredIndices) {
+				newIdx := a.filteredIndices[nextFI]
+				visibleRows := a.height - 12
+				if visibleRows < 1 {
+					visibleRows = 1
+				}
+				if a.activeTab == tabQueue {
+					a.queueCursor = newIdx
+					if a.queueCursor >= a.queueScrollOffset+visibleRows {
+						a.queueScrollOffset = a.queueCursor - visibleRows + 1
+					}
+				} else {
+					a.likedCursor = newIdx
+					if a.likedCursor >= a.likedScrollOffset+visibleRows {
+						a.likedScrollOffset = a.likedCursor - visibleRows + 1
+					}
+				}
+			}
+		}
+		return a, nil
+	case "enter":
+		// Play the currently focused track
+		if a.activeTab == tabQueue && len(a.tracklist) > 0 {
+			a.mode = modeNormal
+			a.filterInput.Blur()
+			return a.playPos(a.queueCursor)
+		}
+		if a.activeTab == tabLiked && len(a.likes.Tracks) > 0 {
+			a.mode = modeNormal
+			a.filterInput.Blur()
+			track := a.likes.Tracks[a.likedCursor]
+			return a.addAndPlay(&track)
+		}
+		return a, nil
+	}
+	// Delegate text input
+	var cmd tea.Cmd
+	a.filterInput, cmd = a.filterInput.Update(msg)
+	a.filterText = a.filterInput.Value()
+	if a.filterText == "" {
+		a.filteredIndices = nil
+		a.mode = modeNormal
+		a.filterInput.Blur()
+		return a, cmd
+	}
+	a = a.computeFilteredIndices()
+	// Jump cursor to first match
+	if len(a.filteredIndices) > 0 {
+		newIdx := a.filteredIndices[0]
+		visibleRows := a.height - 12
+		if visibleRows < 1 {
+			visibleRows = 1
+		}
+		if a.activeTab == tabQueue {
+			a.queueCursor = newIdx
+			if a.queueCursor >= a.queueScrollOffset+visibleRows {
+				a.queueScrollOffset = a.queueCursor - visibleRows + 1
+			}
+			if a.queueCursor < a.queueScrollOffset {
+				a.queueScrollOffset = a.queueCursor
+			}
+		} else if a.activeTab == tabLiked {
+			a.likedCursor = newIdx
+			if a.likedCursor >= a.likedScrollOffset+visibleRows {
+				a.likedScrollOffset = a.likedCursor - visibleRows + 1
+			}
+			if a.likedCursor < a.likedScrollOffset {
+				a.likedScrollOffset = a.likedCursor
+			}
+		}
+	}
+	return a, cmd
+}
+
 // --- Main Update dispatcher ---
 
 func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -1158,6 +1351,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case modeGotoLine:
 			a, cmd := a.updateGotoLine(msg)
 			return a, cmd
+		case modeFilter:
+			a, cmd := a.updateFilter(msg)
+			return a, cmd
 		default:
 			a, cmd := a.updateNormal(msg)
 			return a, cmd
@@ -1273,7 +1469,7 @@ func (a App) renderTabBar() string {
 		tabs = append(tabs, tabEntry{"3:Downloads", tabDownloads})
 	}
 
-	dimmedAll := a.searchVisible() || a.mode == modeHelp || a.mode == modeGotoLine
+	dimmedAll := a.searchVisible() || a.mode == modeHelp || a.mode == modeGotoLine || a.mode == modeFilter
 
 	selCount := len(a.selected)
 	var parts []string
@@ -1297,6 +1493,20 @@ func (a App) renderTabBar() string {
 	return "  " + strings.Join(parts, dimStyle.Render("│"))
 }
 
+// isFilterMatch reports whether index i is in the filtered set.
+// When filter is inactive (filterText == ""), all indices match.
+func (a App) isFilterMatch(i int) bool {
+	if a.filterText == "" {
+		return true
+	}
+	for _, fi := range a.filteredIndices {
+		if fi == i {
+			return true
+		}
+	}
+	return false
+}
+
 func (a App) renderQueueView() string {
 	if len(a.tracklist) == 0 {
 		return dimStyle.Render("  Queue is empty. Press 'a' on a track to add it.")
@@ -1308,7 +1518,11 @@ func (a App) renderQueueView() string {
 	}
 
 	tc := computeTrackCols(a.width)
-	s := trackHeader(tc) + "\n"
+	s := ""
+	if a.mode == modeFilter {
+		s += "  " + a.filterInput.View() + "\n"
+	}
+	s += trackHeader(tc) + "\n"
 
 	end := a.queueScrollOffset + visibleRows
 	if end > len(a.tracklist) {
@@ -1324,6 +1538,7 @@ func (a App) renderQueueView() string {
 		isPlaying := i == a.trackPos
 		isCursor := i == a.queueCursor
 		played := a.trackPos >= 0 && i < a.trackPos
+		isMatch := a.isFilterMatch(i)
 
 		duration := fmt.Sprintf("%d:%02d", t.Duration/60, t.Duration%60)
 		num := fmt.Sprintf("%d", i+1)
@@ -1333,22 +1548,27 @@ func (a App) renderQueueView() string {
 		var numSt, artSt, albSt, titSt, durSt lipgloss.Style
 		var marker string
 
-		switch {
-		case isCursor && isPlaying:
-			marker = titleStyle.Render("▸")
-			numSt, artSt, albSt, titSt, durSt = playingSelectedStyle, playingSelectedStyle, playingSelectedStyle, playingSelectedStyle, playingSelectedStyle
-		case isPlaying:
-			marker = playingStyle.Render("♫")
-			numSt, artSt, albSt, titSt, durSt = playingStyle, playingStyle, playingStyle, playingStyle, playingStyle
-		case isCursor:
-			marker = selectionStripe.Render("▸")
-			numSt, artSt, albSt, titSt, durSt = normalStyle.Bold(true), normalStyle.Bold(true), normalStyle.Bold(true), normalStyle.Bold(true), normalStyle.Bold(true)
-		case played:
+		if !isMatch {
 			marker = " "
 			numSt, artSt, albSt, titSt, durSt = dimStyle, dimStyle, dimStyle, dimStyle, dimStyle
-		default:
-			marker = " "
-			numSt, artSt, albSt, titSt, durSt = dimStyle, artistStyle, dimStyle, normalStyle, dimStyle
+		} else {
+			switch {
+			case isCursor && isPlaying:
+				marker = titleStyle.Render("▸")
+				numSt, artSt, albSt, titSt, durSt = playingSelectedStyle, playingSelectedStyle, playingSelectedStyle, playingSelectedStyle, playingSelectedStyle
+			case isPlaying:
+				marker = playingStyle.Render("♫")
+				numSt, artSt, albSt, titSt, durSt = playingStyle, playingStyle, playingStyle, playingStyle, playingStyle
+			case isCursor:
+				marker = selectionStripe.Render("▸")
+				numSt, artSt, albSt, titSt, durSt = normalStyle.Bold(true), normalStyle.Bold(true), normalStyle.Bold(true), normalStyle.Bold(true), normalStyle.Bold(true)
+			case played:
+				marker = " "
+				numSt, artSt, albSt, titSt, durSt = dimStyle, dimStyle, dimStyle, dimStyle, dimStyle
+			default:
+				marker = " "
+				numSt, artSt, albSt, titSt, durSt = dimStyle, artistStyle, dimStyle, normalStyle, dimStyle
+			}
 		}
 		if isSelected {
 			marker = titleStyle.Render("●")
@@ -1392,7 +1612,11 @@ func (a App) renderLikedView() string {
 	}
 
 	tc := computeTrackCols(a.width)
-	s := trackHeader(tc) + "\n"
+	s := ""
+	if a.mode == modeFilter {
+		s += "  " + a.filterInput.View() + "\n"
+	}
+	s += trackHeader(tc) + "\n"
 
 	end := a.likedScrollOffset + visibleRows
 	if end > len(a.likes.Tracks) {
@@ -1405,7 +1629,17 @@ func (a App) renderLikedView() string {
 
 	for i := a.likedScrollOffset; i < end; i++ {
 		t := a.likes.Tracks[i]
-		row := trackRow(i, t, i == a.likedCursor, true, a.dl != nil && a.dl.IsDownloaded(t), tc)
+		isCursor := i == a.likedCursor
+		isMatch := a.isFilterMatch(i)
+		// When filter is active and this track doesn't match, show dimmed
+		if !isMatch {
+			row := trackRow(i, t, false, true, a.dl != nil && a.dl.IsDownloaded(t), tc)
+			// Re-render all columns in dimStyle by overwriting with a dim version
+			row = dimStyle.Render(row)
+			s += row + "\n"
+			continue
+		}
+		row := trackRow(i, t, isCursor, true, a.dl != nil && a.dl.IsDownloaded(t), tc)
 		if a.selected[t.ID] {
 			// Replace leading space/cursor with selection marker
 			row = titleStyle.Render("●") + row[1:]
@@ -1635,6 +1869,8 @@ func (a App) contextHelp() string {
 		return dimStyle.Render("  esc close")
 	case modeGotoLine:
 		return dimStyle.Render("  enter go  esc cancel")
+	case modeFilter:
+		return dimStyle.Render("  type to filter  ↑↓ navigate  enter play  esc clear")
 	default:
 		switch a.activeTab {
 		case tabLiked:
