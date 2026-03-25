@@ -295,7 +295,6 @@ func trackHeader(tc trackCols) string {
 		return "   " + col("Title", tc.title, headerStyle)
 	}
 	s := "   " +
-		colRight("#", colNum, headerStyle) +
 		col("Artist", tc.artist, headerStyle) +
 		col("Title", tc.title, headerStyle)
 	if tc.showAlbum {
@@ -329,7 +328,6 @@ func trackYear(track types.Track) string {
 
 func trackRow(i int, track types.Track, selected bool, liked bool, downloaded bool, tc trackCols) string {
 	duration := fmt.Sprintf("%d:%02d", track.Duration/60, track.Duration%60)
-	num := fmt.Sprintf("%d", i+1)
 	icons := statusIcons(liked, downloaded)
 
 	// Ultra-narrow: title only
@@ -342,7 +340,6 @@ func trackRow(i int, track types.Track, selected bool, liked bool, downloaded bo
 
 	if selected {
 		s := selectionStripe.Render("▸") + icons +
-			colRight(num, colNum, dimStyle.Bold(true)) +
 			col(track.Artist.Name, tc.artist, artistStyle.Bold(true)) +
 			col(track.Title, tc.title, normalStyle.Bold(true))
 		if tc.showAlbum {
@@ -356,7 +353,6 @@ func trackRow(i int, track types.Track, selected bool, liked bool, downloaded bo
 	}
 
 	s := " " + icons +
-		colRight(num, colNum, dimStyle) +
 		col(track.Artist.Name, tc.artist, artistStyle) +
 		col(track.Title, tc.title, normalStyle)
 	if tc.showAlbum {
@@ -409,25 +405,21 @@ func artistHeader(width int) string {
 		w = 20
 	}
 	return "  " +
-		col("#", colNum, headerStyle) +
 		col("Artist", w, headerStyle)
 }
 
 func artistRow(i int, artist types.ArtistFull, selected bool, width int) string {
-	w := width - 8
+	w := width - 4
 	if w < 20 {
 		w = 20
 	}
-	num := fmt.Sprintf("%d", i+1)
 
 	if selected {
 		return selectionStripe.Render("▸ ") +
-			col(num, colNum, dimStyle.Bold(true)) +
 			col(artist.Name, w, artistStyle.Bold(true))
 	}
 
 	return "  " +
-		col(num, colNum, dimStyle) +
 		col(artist.Name, w, artistStyle)
 }
 
