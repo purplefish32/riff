@@ -1684,17 +1684,35 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		a.tickCount++
 		a.spinnerIdx = (a.spinnerIdx + 1) % len(spinnerFrames)
-		// Animate VU meter from real audio levels (every tick = 100ms)
+		// Animate VU meter
 		if a.nowPlaying.track != nil && !a.nowPlaying.paused {
 			left, right := a.player.GetAudioLevels()
-			l := dbToLevel(left, 1.0)
-			r := dbToLevel(right, 1.0)
-			mid := (l + r) / 2
-			a.vuLevels[0] = l * 6 / 10       // left, scaled down
-			a.vuLevels[1] = l                  // left full
-			a.vuLevels[2] = mid                // center
-			a.vuLevels[3] = r                  // right full
-			a.vuLevels[4] = r * 6 / 10        // right, scaled down
+			if left > -99 || right > -99 {
+				// Real audio data available
+				l := dbToLevel(left, 1.0)
+				r := dbToLevel(right, 1.0)
+				mid := (l + r) / 2
+				a.vuLevels[0] = l * 6 / 10
+				a.vuLevels[1] = l
+				a.vuLevels[2] = mid
+				a.vuLevels[3] = r
+				a.vuLevels[4] = r * 6 / 10
+			} else {
+				// Fallback: smooth random walk per bar
+				for i := range a.vuLevels {
+					delta := rand.Intn(3) - 1
+					a.vuLevels[i] += delta
+					if a.vuLevels[i] < 1 {
+						a.vuLevels[i] = 1
+					}
+					if a.vuLevels[i] > 6 {
+						a.vuLevels[i] = 6
+					}
+				}
+				// Enforce symmetric shape: mirror left onto right
+				a.vuLevels[4] = a.vuLevels[0]
+				a.vuLevels[3] = a.vuLevels[1]
+			}
 		} else {
 			for i := range a.vuLevels {
 				if a.vuLevels[i] > 0 {
