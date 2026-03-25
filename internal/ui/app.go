@@ -1174,6 +1174,111 @@ func (a App) execCommand(input string) (App, tea.Cmd) {
 			return a.withStatus("Line numbers on"), nil
 		}
 		return a.withStatus("Line numbers off"), nil
+	case "play", "p":
+		if len(args) > 0 {
+			// :play N — play track at line N
+			n, err := strconv.Atoi(args[0])
+			if err == nil && n >= 1 {
+				return a.playPos(n - 1)
+			}
+		}
+		// :play — play current cursor position
+		if a.activeTab == tabQueue && len(a.tracklist) > 0 {
+			return a.playPos(a.queueCursor)
+		}
+		return a, nil
+	case "stop", "s":
+		if a.nowPlaying.track != nil {
+			a = a.stopPlayback()
+			return a.withStatus("Stopped"), nil
+		}
+		return a, nil
+	case "pause":
+		if a.nowPlaying.track != nil {
+			a.nowPlaying.paused = !a.nowPlaying.paused
+			a.player.TogglePause()
+			if a.nowPlaying.paused {
+				return a.withStatus("Paused"), nil
+			}
+			return a.withStatus("Resumed"), nil
+		}
+		return a, nil
+	case "next", "n":
+		if a.trackPos < len(a.tracklist)-1 {
+			return a.playPos(a.trackPos + 1)
+		}
+		return a.withStatus("End of queue"), nil
+	case "prev":
+		if a.trackPos > 0 {
+			return a.playPos(a.trackPos - 1)
+		}
+		return a.withStatus("Start of queue"), nil
+	case "seek":
+		if len(args) > 0 && a.nowPlaying.track != nil {
+			secs, err := strconv.Atoi(args[0])
+			if err == nil {
+				a.player.Seek(float64(secs))
+				return a.withStatus(fmt.Sprintf("Seek %+ds", secs)), nil
+			}
+		}
+		return a.withStatus("Usage: seek <seconds>"), nil
+	case "quality":
+		if len(args) > 0 {
+			q := strings.ToUpper(args[0])
+			for i, ql := range qualities {
+				if ql == q {
+					a.quality = i
+					a.config.Quality = q
+					a.config.Save()
+					return a.withStatus(fmt.Sprintf("Quality: %s", q)), nil
+				}
+			}
+			return a.withStatus("Quality: LOW | HIGH | LOSSLESS | HI_RES"), nil
+		}
+		a.quality = (a.quality + 1) % len(qualities)
+		a.config.Quality = qualities[a.quality]
+		a.config.Save()
+		return a.withStatus(fmt.Sprintf("Quality: %s", qualities[a.quality])), nil
+	case "like", "l":
+		if target := a.targetTrackOrNowPlaying(); target != nil {
+			if a.likes.Toggle(*target) {
+				return a.withStatus(fmt.Sprintf("Liked: %s", target.Title)), nil
+			}
+			return a.withStatus(fmt.Sprintf("Unliked: %s", target.Title)), nil
+		}
+		return a, nil
+	case "download", "dl":
+		if a.dl != nil {
+			if target := a.targetTrackOrNowPlaying(); target != nil {
+				a.dl.QueueTrack(*target)
+				return a.withStatus(fmt.Sprintf("Downloading: %s", target.Title)), nil
+			}
+		}
+		return a, nil
+	case "retry":
+		if a.dl != nil {
+			n := a.dl.RetryFailed()
+			if n > 0 {
+				return a.withStatus(fmt.Sprintf("Retrying %d downloads", n)), nil
+			}
+		}
+		return a.withStatus("No failed downloads"), nil
+	case "tab":
+		if len(args) > 0 {
+			switch args[0] {
+			case "queue", "1":
+				a.activeTab = tabQueue
+			case "liked", "2":
+				a.activeTab = tabLiked
+			case "downloads", "3":
+				a.activeTab = tabDownloads
+			}
+			return a, nil
+		}
+		return a.withStatus("Usage: tab queue|liked|downloads"), nil
+	case "help":
+		a.mode = modeHelp
+		return a, nil
 	default:
 		// Try as a number (":42" = goto 42)
 		if n, err := strconv.Atoi(cmd); err == nil && n >= 1 {
