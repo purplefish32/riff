@@ -262,6 +262,10 @@ func (a App) playPos(pos int) (App, tea.Cmd) {
 	if pos < 0 || pos >= len(a.tracklist) {
 		return a, nil
 	}
+	// Add previous track to recent if played for at least 10 seconds
+	if a.recent != nil && a.nowPlaying.track != nil && a.nowPlaying.position >= 10 {
+		a.recent.Add(*a.nowPlaying.track)
+	}
 	a.playGen++
 	a.trackPos = pos
 	a.audioInfo = ""
@@ -276,9 +280,6 @@ func (a App) playPos(pos int) (App, tea.Cmd) {
 	a.err = nil
 	a.loading = true
 	a.streamRetries = 0
-	if a.recent != nil {
-		a.recent.Add(*track)
-	}
 	trackID := track.ID
 	q := qualities[a.quality]
 	return a, func() tea.Msg {
@@ -395,6 +396,9 @@ func (a App) targetTrackOrNowPlaying() *types.Track {
 }
 
 func (a App) stopPlayback() App {
+	if a.recent != nil && a.nowPlaying.track != nil && a.nowPlaying.position >= 10 {
+		a.recent.Add(*a.nowPlaying.track)
+	}
 	a.playGen++
 	a.player.Stop()
 	a.nowPlaying.track = nil
@@ -2181,9 +2185,15 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.gen != a.playGen {
 			return a, nil
 		}
-		// Increment play count for the track that just finished
-		if a.trackPos >= 0 && a.trackPos < len(a.tracklist) && a.playCounts != nil {
-			a.playCounts.Increment(a.tracklist[a.trackPos].ID)
+		// Increment play count and add to recent for the track that just finished
+		if a.trackPos >= 0 && a.trackPos < len(a.tracklist) {
+			track := a.tracklist[a.trackPos]
+			if a.playCounts != nil {
+				a.playCounts.Increment(track.ID)
+			}
+			if a.recent != nil && a.nowPlaying.position >= 10 {
+				a.recent.Add(track)
+			}
 		}
 		if a.trackPos < len(a.tracklist)-1 {
 			return a.playPos(a.trackPos + 1)
