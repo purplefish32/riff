@@ -670,7 +670,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			a.loading = false
 			a.streamRetries = 0
-			a.err = msg.err
+			a.err = fmt.Errorf("%s", friendlyError(msg.err))
 			return a, nil
 		}
 		a.loading = false
@@ -721,7 +721,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if isNetworkError(msg.err) {
 				a.online = false
 			}
-			a.err = msg.err
+			a.err = fmt.Errorf("%s", friendlyError(msg.err))
 			return a, nil
 		}
 		a.online = true
@@ -738,7 +738,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case errMsg:
-		a.err = msg.err
+		a.err = fmt.Errorf("%s", friendlyError(msg.err))
 		return a, nil
 
 	case FifoCommandMsg:
