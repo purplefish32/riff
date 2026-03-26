@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -129,6 +130,9 @@ type App struct {
 	showPlayCounts   bool
 	showAlbumArt     bool
 	repeat           bool
+	shuffle          bool
+	shufflePlayed    map[int]bool // track indices played this shuffle pass
+	shuffleHistory   []int        // indices in order actually played (for prev)
 	notifications    bool
 	audioInfo        string
 	saveInput        textinput.Model
@@ -485,6 +489,7 @@ func (a App) syncNowPlaying() App {
 	a.nowPlaying.audioInfo = a.audioInfo
 	a.nowPlaying.showAlbumArt = a.showAlbumArt
 	a.nowPlaying.repeat = a.repeat
+	a.nowPlaying.shuffle = a.shuffle
 	if a.nowPlaying.track != nil {
 		a.nowPlaying.liked = a.likes.IsLiked(a.nowPlaying.track.ID)
 		a.nowPlaying.coverID = a.nowPlaying.track.Album.Cover
@@ -504,6 +509,85 @@ func (a App) adjustVolume(delta int) App {
 	a.config.Volume = a.volume
 	a.config.Save()
 	return a
+}
+
+// nextTrack returns the next track position to play.
+// In shuffle mode, picks a random unplayed track. In normal mode, returns trackPos+1.
+// Returns -1 if no next track is available.
+func (a App) nextTrack() int {
+	if !a.shuffle {
+		if a.trackPos < len(a.tracklist)-1 {
+			return a.trackPos + 1
+		}
+		return -1
+	}
+	// Shuffle mode: pick random unplayed track
+	if a.shufflePlayed == nil {
+		a.shufflePlayed = make(map[int]bool)
+	}
+	// Mark current as played
+	if a.trackPos >= 0 {
+		a.shufflePlayed[a.trackPos] = true
+	}
+	// Collect unplayed indices
+	var unplayed []int
+	for i := range a.tracklist {
+		if !a.shufflePlayed[i] {
+			unplayed = append(unplayed, i)
+		}
+	}
+	if len(unplayed) > 0 {
+		return unplayed[rand.Intn(len(unplayed))]
+	}
+	// All played — if repeat, reshuffle
+	if a.repeat && len(a.tracklist) > 0 {
+		a.shufflePlayed = make(map[int]bool)
+		if a.trackPos >= 0 {
+			a.shufflePlayed[a.trackPos] = true
+		}
+		// Rebuild unplayed after reset
+		for i := range a.tracklist {
+			if !a.shufflePlayed[i] {
+				unplayed = append(unplayed, i)
+			}
+		}
+		if len(unplayed) > 0 {
+			return unplayed[rand.Intn(len(unplayed))]
+		}
+	}
+	return -1
+}
+
+// playNext plays the next track (shuffle-aware) and records history.
+func (a App) playNext() (App, tea.Cmd) {
+	next := a.nextTrack()
+	if next < 0 {
+		if !a.shuffle && a.repeat && len(a.tracklist) > 0 {
+			return a.playPos(0)
+		}
+		a.nowPlaying.track = nil
+		a.nowPlaying.paused = false
+		return a, nil
+	}
+	if a.shuffle {
+		a.shuffleHistory = append(a.shuffleHistory, a.trackPos)
+	}
+	return a.playPos(next)
+}
+
+// playPrev plays the previous track (shuffle-aware using history).
+func (a App) playPrev() (App, tea.Cmd) {
+	if a.shuffle && len(a.shuffleHistory) > 0 {
+		prev := a.shuffleHistory[len(a.shuffleHistory)-1]
+		a.shuffleHistory = a.shuffleHistory[:len(a.shuffleHistory)-1]
+		// Remove from played set so it can be picked again later
+		delete(a.shufflePlayed, prev)
+		return a.playPos(prev)
+	}
+	if a.trackPos > 0 {
+		return a.playPos(a.trackPos - 1)
+	}
+	return a, nil
 }
 
 // --- Main Update dispatcher ---
@@ -711,15 +795,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.recent.Add(track)
 			}
 		}
-		if a.trackPos < len(a.tracklist)-1 {
-			return a.playPos(a.trackPos + 1)
-		}
-		if a.repeat && len(a.tracklist) > 0 {
-			return a.playPos(0)
-		}
-		a.nowPlaying.track = nil
-		a.nowPlaying.paused = false
-		return a, nil
+		return a.playNext()
 
 	case queueAlbumMsg:
 		if msg.err != nil {

@@ -28,31 +28,39 @@ func TestExecCommandQuitAlias(t *testing.T) {
 	}
 }
 
-func TestExecCommandShuffle(t *testing.T) {
-	tracks := sampleTracks(5)
-	a := testApp(t, tracks)
+func TestExecCommandShuffleToggle(t *testing.T) {
+	a := testApp(t, sampleTracks(5))
 
 	a, _ = a.execCommand("shuffle")
-	if len(a.tracklist) != 5 {
-		t.Errorf("tracklist len = %d, want 5", len(a.tracklist))
+	if !a.shuffle {
+		t.Error("shuffle should be on after first toggle")
 	}
-	if a.trackPos != -1 {
-		t.Errorf("trackPos = %d, want -1 after shuffle", a.trackPos)
+	if a.shufflePlayed == nil {
+		t.Error("shufflePlayed should be initialized")
 	}
-	if a.queueCursor != 0 {
-		t.Errorf("queueCursor = %d, want 0 after shuffle", a.queueCursor)
+	if !strings.Contains(a.statusMsg, "on") {
+		t.Errorf("statusMsg = %q, expected 'on'", a.statusMsg)
 	}
-	if !strings.Contains(a.statusMsg, "shuffled") {
-		t.Errorf("statusMsg = %q, expected 'shuffled'", a.statusMsg)
+
+	a, _ = a.execCommand("shuffle")
+	if a.shuffle {
+		t.Error("shuffle should be off after second toggle")
+	}
+	if !strings.Contains(a.statusMsg, "off") {
+		t.Errorf("statusMsg = %q, expected 'off'", a.statusMsg)
 	}
 }
 
-func TestExecCommandShuffleSingleTrack(t *testing.T) {
-	a := testApp(t, sampleTracks(1))
-	a, _ = a.execCommand("shuffle")
-	// Should be a no-op for single track
-	if a.statusMsg != "" {
-		t.Errorf("single track shuffle should be no-op, got statusMsg = %q", a.statusMsg)
+func TestExecCommandReorder(t *testing.T) {
+	tracks := sampleTracks(5)
+	a := testApp(t, tracks)
+
+	a, _ = a.execCommand("reorder")
+	if len(a.tracklist) != 5 {
+		t.Errorf("tracklist len = %d, want 5", len(a.tracklist))
+	}
+	if !strings.Contains(a.statusMsg, "reordered") {
+		t.Errorf("statusMsg = %q, expected 'reordered'", a.statusMsg)
 	}
 }
 

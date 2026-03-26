@@ -221,15 +221,9 @@ func (a App) updateSearchBrowse(msg tea.KeyPressMsg) (App, tea.Cmd) {
 		}
 		return a, nil
 	case "n":
-		if a.trackPos < len(a.tracklist)-1 {
-			return a.playPos(a.trackPos + 1)
-		}
-		return a, nil
+		return a.playNext()
 	case "p":
-		if a.trackPos > 0 {
-			return a.playPos(a.trackPos - 1)
-		}
-		return a, nil
+		return a.playPrev()
 	case "left":
 		if a.nowPlaying.track != nil {
 			a.player.Seek(-5)
@@ -603,15 +597,9 @@ func (a App) updateNormal(msg tea.KeyPressMsg) (App, tea.Cmd) {
 		a.mode = modeSavePlaylist
 		return a, nil
 	case "n":
-		if a.trackPos < len(a.tracklist)-1 {
-			return a.playPos(a.trackPos + 1)
-		}
-		return a, nil
+		return a.playNext()
 	case "p":
-		if a.trackPos > 0 {
-			return a.playPos(a.trackPos - 1)
-		}
-		return a, nil
+		return a.playPrev()
 	case "left":
 		if a.nowPlaying.track != nil {
 			a.player.Seek(-5)
