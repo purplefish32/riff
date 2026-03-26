@@ -129,6 +129,7 @@ type App struct {
 	showPlayCounts   bool
 	showAlbumArt     bool
 	repeat           bool
+	notifications    bool
 	audioInfo        string
 	saveInput        textinput.Model
 	saveTracks       []types.Track
@@ -184,6 +185,7 @@ func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedS
 		showPlayCounts:  cfg.ShowPlayCounts,
 		showRemaining:   cfg.ShowRemaining,
 		showAlbumArt:    cfg.ShowAlbumArt,
+		notifications:   true,
 		filterInput: newFilterInput(),
 		saveInput:   newSaveInput(),
 		renameInput: newRenameInput(),
@@ -1485,6 +1487,12 @@ func (a App) execCommand(input string) (App, tea.Cmd) {
 			}
 		}
 		return a.withStatus("Usage: goto <number>"), nil
+	case "notifications":
+		a.notifications = !a.notifications
+		if a.notifications {
+			return a.withStatus("Notifications: on"), nil
+		}
+		return a.withStatus("Notifications: off"), nil
 	case "repeat":
 		a.repeat = !a.repeat
 		if a.repeat {
@@ -2178,8 +2186,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		cmds := []tea.Cmd{a.makeWaitForTrackEnd(a.playGen)}
 		if a.trackPos >= 0 && a.trackPos < len(a.tracklist) {
-			if coverID := a.tracklist[a.trackPos].Album.Cover; coverID != "" {
+			track := a.tracklist[a.trackPos]
+			if coverID := track.Album.Cover; coverID != "" {
 				cmds = append(cmds, a.fetchArt(coverID))
+			}
+			if a.notifications {
+				sendNotification("riff", fmt.Sprintf("%s — %s", track.Title, track.Artist.Name))
 			}
 		}
 		return a, tea.Batch(cmds...)
@@ -2830,6 +2842,16 @@ func isNetworkError(err error) bool {
 		strings.Contains(s, "i/o timeout") ||
 		strings.Contains(s, "network") ||
 		strings.Contains(s, "all instances failed")
+}
+
+func sendNotification(title, body string) {
+	switch runtime.GOOS {
+	case "darwin":
+		script := fmt.Sprintf(`display notification "%s" with title "%s"`, body, title)
+		exec.Command("osascript", "-e", script).Start()
+	case "linux":
+		exec.Command("notify-send", title, body).Start()
+	}
 }
 
 func openBrowser(url string) {
