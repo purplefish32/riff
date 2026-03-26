@@ -12,7 +12,12 @@ import (
 	"time"
 )
 
-const socketPath = "/tmp/riff-mpv.sock"
+const (
+	socketPath     = "/tmp/riff-mpv.sock"
+	connectRetries = 50
+	connectDelay   = 50 * time.Millisecond
+	commandTimeout = 5 * time.Second
+)
 
 type Player struct {
 	cmd       *exec.Cmd
@@ -58,12 +63,12 @@ func New(logger *log.Logger) (*Player, error) {
 	}
 
 	var conn net.Conn
-	for range 50 {
+	for range connectRetries {
 		conn, _ = net.Dial("unix", socketPath)
 		if conn != nil {
 			break
 		}
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(connectDelay)
 	}
 	if conn == nil {
 		cmd.Process.Kill()
@@ -148,7 +153,7 @@ func (p *Player) command(args ...any) (*ipcResponse, error) {
 			return nil, fmt.Errorf("mpv error: %s", resp.Error)
 		}
 		return &resp, nil
-	case <-time.After(5 * time.Second):
+	case <-time.After(commandTimeout):
 		p.respMu.Lock()
 		delete(p.responses, id)
 		p.respMu.Unlock()
