@@ -497,6 +497,7 @@ func (a App) View() tea.View {
 					"\n" +
 					helpLine("l", "Toggle like") +
 					helpLine("d / D", "Download track / album") +
+					helpLine("b", "Play album from track") +
 					helpLine("u", "Open album in browser") +
 					helpLine("P", "Add track to playlist") +
 					helpLine("S", "Save queue as playlist") +
