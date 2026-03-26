@@ -26,9 +26,11 @@ var (
 	downloadIcon    lipgloss.Style
 	overlayBorder   lipgloss.Style
 	accentColor     lipgloss.Color
+	bgColor         lipgloss.Color
 	selectionStripe lipgloss.Style
 	activeTabStyle  lipgloss.Style
 	altRowBg        lipgloss.Style
+	contentClip     lipgloss.Style
 )
 
 func init() {
@@ -50,8 +52,11 @@ func init() {
 		selectionStripe = plain.Bold(true)
 		activeTabStyle = plain.Bold(true).Underline(true)
 		altRowBg = plain
+		contentClip = plain
 		return
 	}
+
+	bgColor = lipgloss.Color("#0D0D0D")
 
 	accentColor = lipgloss.Color("#FF6AC1")
 	errorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000"))

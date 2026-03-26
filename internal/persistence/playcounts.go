@@ -2,6 +2,7 @@ package persistence
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -25,7 +26,9 @@ func NewPlayCountStore() *PlayCountStore {
 
 	data, err := os.ReadFile(s.path)
 	if err == nil {
-		json.Unmarshal(data, s)
+		if err := json.Unmarshal(data, s); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: corrupt playcounts.json, starting fresh: %s\n", err)
+		}
 		if s.Counts == nil {
 			s.Counts = make(map[int]int)
 		}
@@ -50,5 +53,7 @@ func (s *PlayCountStore) save() {
 	if err != nil {
 		return
 	}
-	os.WriteFile(s.path, data, 0o644)
+	if err := os.WriteFile(s.path, data, 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to save play counts: %s\n", err)
+	}
 }
