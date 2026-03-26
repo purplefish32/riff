@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 	"github.com/purplefish32/riff/internal/types"
 )
 
@@ -58,7 +58,7 @@ func newSearchModel() searchModel {
 	ti.Placeholder = "Search tracks..."
 	ti.Prompt = "🔍 "
 	ti.CharLimit = 100
-	ti.Width = 40
+	ti.SetWidth(40)
 
 	return searchModel{input: ti}
 }
@@ -91,7 +91,7 @@ func (m *searchModel) resetHistoryIndex() {
 
 func (m searchModel) Update(msg tea.Msg) (searchModel, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "up":
 			if m.input.Focused() {

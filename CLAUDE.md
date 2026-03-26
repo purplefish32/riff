@@ -41,10 +41,10 @@ riff/
 
 ## Tech Stack
 
-- **Go 1.24+**
-- **Bubble Tea** — TUI framework
-- **Lip Gloss** — Styling
-- **Bubbles** — Text input component
+- **Go 1.25+**
+- **Bubble Tea v2** (`charm.land/bubbletea/v2`) — TUI framework
+- **Lip Gloss v2** (`charm.land/lipgloss/v2`) — Styling
+- **Bubbles v2** (`charm.land/bubbles/v2`) — Text input, progress bar components
 - **mpv** — Audio playback via JSON IPC over Unix socket
 
 ## API
@@ -60,14 +60,14 @@ riff/
 - **Single reader goroutine for mpv IPC** — routes command responses via `map[requestID]chan` and events via dedicated channel. Prevents concurrent read conflicts.
 - **Tracklist with position pointer** — Spotify-like queue where tracks stay in the list after playing. Position moves forward/backward.
 - **Search as popup overlay** — search floats over any tab, dismissed with esc.
-- **State machine for input modes** — single `inputMode` enum controls all key routing. Modes: `modeNormal`, `modeSearchInput`, `modeSearchBrowse`, `modeHelp`, `modeFilter`, `modeCommand`, `modeSavePlaylist`, `modeRenamePlaylist`, `modeAddToPlaylist`, `modeConfirmDelete`. Each mode has its own key handler method. Add new modes by adding a const + handler method + case in Update().
+- **State machine for input modes** — single `inputMode` enum controls all key routing. Modes: `modeNormal`, `modeSearchInput`, `modeSearchBrowse`, `modeHelp`, `modeFilter`, `modeCommand`, `modeSavePlaylist`, `modeRenamePlaylist`, `modeAddToPlaylist`, `modeConfirmDelete`. Each mode has its own key handler method. Add new modes by adding a const + handler method + case in Update(). Key events use `tea.KeyPressMsg` (v2), mouse events use `tea.MouseClickMsg`/`tea.MouseWheelMsg`. Space key matches as `"space"` not `" "`.
 - **Never call prog.Send() from Update()** — calling `prog.Send()` during the bubbletea Update cycle deadlocks because the event loop can't drain the message channel. The downloader's `notify()` callback must only be called from background goroutines, never synchronously from key handlers.
 
 ## UI Conventions
 
 Follow these when modifying the TUI:
 
-- **View() must be pure** — no state mutations in View(). All state sync (nowPlaying quality/volume/liked) happens in the tick handler via `syncNowPlaying()`.
+- **View() must be pure** — no state mutations in View(). Returns `tea.View` (v2) with `AltScreen` and `MouseMode` set declaratively. All state sync (nowPlaying quality/volume/liked) happens in the tick handler via `syncNowPlaying()`.
 - **Shared styles only** — all colors defined in `styles.go`. No inline `lipgloss.NewStyle().Foreground(lipgloss.Color(...))`. Use named styles: `titleStyle`, `artistStyle`, `dimStyle`, `errorStyle`, `downloadIcon`, `overlayBorder`, `selectionStripe`, `activeTabStyle`, `altRowBg`. Use `bgColor` constant for whitespace backgrounds.
 - **NO_COLOR support** — `styles.go` checks `NO_COLOR` env var. When set, styles use bold/reverse instead of color. All new styles must have a no-color variant in the `init()` function.
 - **Responsive breakpoints** — `computeTrackCols(width)` adapts columns at 3 thresholds:

@@ -1,9 +1,10 @@
 package ui
 
 import (
+	"image/color"
 	"os"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 var noColor = os.Getenv("NO_COLOR") != ""
@@ -25,8 +26,8 @@ var (
 	errorStyle      lipgloss.Style
 	downloadIcon    lipgloss.Style
 	overlayBorder   lipgloss.Style
-	accentColor     lipgloss.Color
-	bgColor         lipgloss.Color
+	accentColor     color.Color
+	bgColor         color.Color
 	selectionStripe lipgloss.Style
 	activeTabStyle  lipgloss.Style
 	altRowBg        lipgloss.Style

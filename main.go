@@ -11,7 +11,7 @@ import (
 	"strings"
 	"syscall"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/purplefish32/riff/internal/api"
 	"github.com/purplefish32/riff/internal/downloader"
 	"github.com/purplefish32/riff/internal/persistence"
@@ -80,7 +80,7 @@ func main() {
 	rs := persistence.NewRecentStore()
 
 	app := ui.NewApp(client, p, likes, dl, cfg, qs, pc, ps, rs)
-	prog := tea.NewProgram(app, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	prog := tea.NewProgram(app)
 
 	dl.SetOnUpdate(func() {
 		prog.Send(ui.DownloadUpdateMsg{})

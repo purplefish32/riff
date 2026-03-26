@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/progress"
+	"charm.land/bubbles/v2/progress"
+	"charm.land/lipgloss/v2"
 	"github.com/purplefish32/riff/internal/types"
 )
 
@@ -27,7 +28,7 @@ type nowPlayingModel struct {
 
 func newNowPlayingModel() nowPlayingModel {
 	prog := progress.New(
-		progress.WithGradient("#C084FC", "#38BDF8"),
+		progress.WithColors(lipgloss.Color("#C084FC"), lipgloss.Color("#38BDF8")),
 		progress.WithoutPercentage(),
 	)
 	return nowPlayingModel{progress: prog}
@@ -92,7 +93,7 @@ func (m nowPlayingModel) View(width int) string {
 		pct = 1
 	}
 
-	m.progress.Width = barWidth
+	m.progress.SetWidth(barWidth)
 	leftTime := formatTime(m.position)
 	if m.showRemaining && m.duration > 0 {
 		remaining := m.duration - m.position
