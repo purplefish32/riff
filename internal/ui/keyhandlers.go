@@ -169,6 +169,30 @@ func (a App) updateSearchBrowse(msg tea.KeyPressMsg) (App, tea.Cmd) {
 			}
 		}
 		a = a.withStatus("No track selected")
+	case "m":
+		if target := a.targetTrackOrNowPlaying(); target != nil {
+			artistName := target.Artist.Name
+			artistID := target.Artist.ID
+			a.search.loading = true
+			a.search.input.SetValue(artistName)
+			a.search.browseArtistID = artistID
+			a = a.withStatus(fmt.Sprintf("More from %s", artistName))
+			return a, func() tea.Msg {
+				albums, err := a.client.SearchAlbums(artistName)
+				return moreArtistAlbumsMsg{albums: albums, artistID: artistID, err: err}
+			}
+		}
+		return a, nil
+	case "M":
+		// Switch to similar artists (when browsing an artist)
+		if a.search.browseArtistID > 0 {
+			a.search.loading = true
+			artistID := a.search.browseArtistID
+			return a, func() tea.Msg {
+				artists, err := a.client.GetSimilarArtists(artistID)
+				return similarArtistsMsg{artists: artists, err: err}
+			}
+		}
 		return a, nil
 	case "space":
 		if a.nowPlaying.track != nil {
@@ -702,6 +726,21 @@ func (a App) updateNormal(msg tea.KeyPressMsg) (App, tea.Cmd) {
 			a.mode = modeRenamePlaylist
 			return a, nil
 		}
+		return a, nil
+	case "m":
+		if target := a.targetTrackOrNowPlaying(); target != nil {
+			artistName := target.Artist.Name
+			artistID := target.Artist.ID
+			a.search.loading = true
+			a.search.input.SetValue(artistName)
+			a.search.browseArtistID = artistID
+			a = a.withStatus(fmt.Sprintf("More from %s", artistName))
+			return a, func() tea.Msg {
+				albums, err := a.client.SearchAlbums(artistName)
+				return moreArtistAlbumsMsg{albums: albums, artistID: artistID, err: err}
+			}
+		}
+		a = a.withStatus("No track selected")
 		return a, nil
 	case "u":
 		if target := a.targetTrackOrNowPlaying(); target != nil {
