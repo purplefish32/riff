@@ -613,6 +613,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !a.online && a.tickCount%100 == 0 {
 				return a, tea.Batch(tick(), a.doPing())
 			}
+			// Write state file for external tools
+			a.writeStateFile()
 		}
 		return a, tick()
 
