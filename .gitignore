@@ -5,3 +5,4 @@ riff
 *.dylib
 .DS_Store
 .claude
+.worktrees/
