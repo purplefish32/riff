@@ -2866,7 +2866,7 @@ func sendTrackNotification(track types.Track) {
 			if cover := track.Album.Cover; cover != "" {
 				coverPath := downloadCoverToTemp(cover)
 				if coverPath != "" {
-					args = append(args, "-contentImage", coverPath)
+					args = append(args, "-contentImage", coverPath, "-appIcon", coverPath)
 				}
 			}
 			exec.Command(tn, args...).Start()
