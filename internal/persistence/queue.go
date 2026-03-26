@@ -18,6 +18,15 @@ type QueueStore struct {
 	path         string
 }
 
+// NewQueueStoreAt creates a QueueStore writing to the given directory.
+func NewQueueStoreAt(dir string) *QueueStore {
+	os.MkdirAll(dir, 0o755)
+	return &QueueStore{
+		Position: -1,
+		path:     filepath.Join(dir, "queue.json"),
+	}
+}
+
 func NewQueueStore() *QueueStore {
 	configDir, _ := os.UserConfigDir()
 	dir := filepath.Join(configDir, "riff")

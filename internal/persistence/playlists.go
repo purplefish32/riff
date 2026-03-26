@@ -22,6 +22,13 @@ func NewPlaylistStore() *PlaylistStore {
 	return &PlaylistStore{dir: dir}
 }
 
+// NewPlaylistStoreAt creates a PlaylistStore rooted at the given directory.
+// Useful for testing with a temp dir.
+func NewPlaylistStoreAt(dir string) *PlaylistStore {
+	os.MkdirAll(filepath.Join(dir, "playlists"), 0o755)
+	return &PlaylistStore{dir: filepath.Join(dir, "playlists")}
+}
+
 // sanitizeName cleans the name for use as a filename.
 // Converts spaces to dashes, strips invalid characters.
 func sanitizeName(name string) string {
