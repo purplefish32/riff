@@ -502,6 +502,7 @@ func (a App) View() tea.View {
 					helpLine("P", "Add track to playlist") +
 					helpLine("S", "Save queue as playlist") +
 					helpLine("R", "Toggle repeat") +
+					helpLine("W", "Toggle track radio") +
 					helpLine("Q", "Cycle audio quality") +
 					helpLine("t", "Toggle elapsed/remaining") +
 					helpLine(":", "Command mode") +

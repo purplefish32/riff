@@ -728,9 +728,24 @@ func (a App) updateNormal(msg tea.KeyPressMsg) (App, tea.Cmd) {
 	case "R":
 		a.repeat = !a.repeat
 		if a.repeat {
+			a.radio = false // mutually exclusive
 			a = a.withStatus("Repeat: on ↻")
 		} else {
 			a = a.withStatus("Repeat: off")
+		}
+		return a, nil
+	case "W":
+		if target := a.targetTrackOrNowPlaying(); target != nil {
+			a.radio = !a.radio
+			if a.radio {
+				a.repeat = false // mutually exclusive
+				a.radioFetching = false
+				a = a.withStatus(fmt.Sprintf("Radio: on ≈ (from %s)", target.Title))
+			} else {
+				a = a.withStatus("Radio: off")
+			}
+		} else {
+			a = a.withStatus("No track for radio seed")
 		}
 		return a, nil
 	case "f":

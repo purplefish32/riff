@@ -25,6 +25,7 @@ type nowPlayingModel struct {
 	showAlbumArt  bool
 	repeat        bool
 	shuffle       bool
+	radio         bool
 }
 
 func newNowPlayingModel() nowPlayingModel {
@@ -71,6 +72,9 @@ func (m nowPlayingModel) View(width int) string {
 	}
 	if m.shuffle {
 		meta = append(meta, titleStyle.Render("⤮"))
+	}
+	if m.radio {
+		meta = append(meta, titleStyle.Render("≈"))
 	}
 	meta = append(meta, dimStyle.Render(fmt.Sprintf("vol:%d%%", m.volume)))
 	line2 := "     " + strings.Join(meta, artistStyle.Render(" · "))
