@@ -24,6 +24,19 @@ func (a App) execCommand(input string) (App, tea.Cmd) {
 		a.saveQueue()
 		return a.withStatus("Queue saved"), nil
 	case "shuffle":
+		a.shuffle = !a.shuffle
+		if a.shuffle {
+			a.shufflePlayed = make(map[int]bool)
+			a.shuffleHistory = nil
+			if a.trackPos >= 0 {
+				a.shufflePlayed[a.trackPos] = true
+			}
+			return a.withStatus("Shuffle: on ⤮"), nil
+		}
+		a.shufflePlayed = nil
+		a.shuffleHistory = nil
+		return a.withStatus("Shuffle: off"), nil
+	case "reorder":
 		if len(a.tracklist) > 1 {
 			rand.Shuffle(len(a.tracklist), func(i, j int) {
 				a.tracklist[i], a.tracklist[j] = a.tracklist[j], a.tracklist[i]
@@ -33,7 +46,7 @@ func (a App) execCommand(input string) (App, tea.Cmd) {
 			a.queueScrollOffset = 0
 			a = a.markDirty()
 			a.saveQueue()
-			return a.withStatus("Queue shuffled"), nil
+			return a.withStatus("Queue reordered"), nil
 		}
 		return a, nil
 	case "discard":
