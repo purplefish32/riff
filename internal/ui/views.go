@@ -465,35 +465,41 @@ func (a App) View() tea.View {
 				titleStyle.Render("Keybindings") + "\n\n" +
 					helpLine("tab/shift+tab", "Switch tabs") +
 					helpLine("/", "Focus search") +
-					helpLine("tab", "Toggle track/album/artist search") +
+					helpLine("tab (in search)", "Toggle track/album/artist") +
 					helpLine("enter", "Play track / browse album") +
-					helpLine("esc", "Blur search / close help") +
+					helpLine("esc", "Close overlay / cancel") +
 					helpLine("backspace", "Back from album tracklist") +
 					"\n" +
 					helpLine("space", "Toggle pause") +
 					helpLine("s", "Stop playback") +
 					helpLine("n", "Next track in queue") +
 					helpLine("p", "Previous track") +
-					helpLine("a", "Queue track / queue album") +
+					helpLine("a", "Queue track / append playlist") +
 					helpLine("A", "Queue all album tracks") +
-					helpLine("x", "Remove from queue") +
+					helpLine("x", "Remove from queue / delete playlist") +
 					helpLine("left/right", "Seek -5s / +5s") +
 					helpLine("+/-", "Volume up/down") +
 					"\n" +
 					helpLine("j/k", "Navigate up/down") +
 					helpLine("J/K", "Move queue track down/up") +
-					helpLine("c", "Jump to now playing") +
-					helpLine("t", "Toggle elapsed/remaining time") +
-					helpLine("G / home", "Jump to last / first item") +
+					helpLine("gg / G", "Jump to first / last item") +
+					helpLine("home / end", "Jump to first / last item") +
 					helpLine("ctrl+u/d", "Page up / page down") +
-					helpLine("f", "Filter current list") +
-					helpLine("d", "Download track") +
-					helpLine("D", "Download album") +
+					helpLine("c", "Jump to now playing") +
+					helpLine("f", "Filter queue") +
+					helpLine("v / V", "Select track / select all") +
+					"\n" +
 					helpLine("l", "Toggle like") +
+					helpLine("d / D", "Download track / album") +
 					helpLine("u", "Open album in browser") +
-					helpLine("Q", "Cycle quality") +
+					helpLine("P", "Add track to playlist") +
+					helpLine("S", "Save queue as playlist") +
+					helpLine("R", "Toggle repeat") +
+					helpLine("Q", "Cycle audio quality") +
+					helpLine("t", "Toggle elapsed/remaining") +
+					helpLine(":", "Command mode") +
 					helpLine("?", "Toggle this help") +
-					helpLine("q", "Quit"),
+					helpLine("q / ctrl+c", "Quit"),
 			)
 		if noColor {
 			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, helpOverlay)
@@ -545,13 +551,15 @@ func (a App) View() tea.View {
 func (a App) contextHelp() string {
 	switch a.mode {
 	case modeSearchInput:
-		return dimStyle.Render("  enter search  tab mode  esc close")
+		return dimStyle.Render("  enter search  tab mode  ↑↓ history  esc close")
 	case modeSearchBrowse:
-		return dimStyle.Render("  enter select  a queue  d download  esc close")
+		return dimStyle.Render("  enter select  a queue  d download  P playlist  S save album  esc close")
 	case modeHelp:
 		return dimStyle.Render("  esc close")
+	case modeCommand:
+		return dimStyle.Render("  :help :vol :quality :shuffle :save :load :tab  enter run  esc cancel")
 	case modeFilter:
-		return dimStyle.Render("  type to filter  enter play  esc clear")
+		return dimStyle.Render("  type to filter  ↑↓ navigate  enter play  esc clear")
 	case modeSavePlaylist:
 		return dimStyle.Render("  enter save  esc cancel")
 	case modeRenamePlaylist:

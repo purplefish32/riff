@@ -255,6 +255,8 @@ func (a App) execCommand(input string) (App, tea.Cmd) {
 	case "help":
 		a.mode = modeHelp
 		return a, nil
+	case "commands":
+		return a.withStatus("q vol goto shuffle save load delete tab quality repeat lines playcounts art notifications seek next prev pause stop clear discard help"), nil
 	case "save":
 		if a.playlists == nil {
 			return a.withStatus("Playlists unavailable"), nil
