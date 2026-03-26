@@ -98,7 +98,11 @@ func (a App) renderQueueView() string {
 	tc := computeTrackCols(a.width)
 	s := ""
 	if a.mode == modeFilter {
-		s += "  " + a.filterInput.View() + "\n"
+		s += "  " + a.filterInput.View()
+		if a.filterText != "" && len(a.filteredIndices) == 0 {
+			s += "  " + dimStyle.Render("No matches")
+		}
+		s += "\n"
 	}
 	// Queue header (respects showLineNumbers)
 	qh := "   "

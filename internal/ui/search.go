@@ -473,6 +473,8 @@ func (m searchModel) View(width int, isLiked func(int) bool, isDownloaded func(t
 			for i, artist := range m.artists {
 				s += artistRow(i, artist, i == m.cursor, width) + "\n"
 			}
+		} else {
+			s += dimStyle.Render("  No artists found.") + "\n"
 		}
 	case modeAlbum:
 		if len(m.albums) > 0 {
@@ -480,6 +482,8 @@ func (m searchModel) View(width int, isLiked func(int) bool, isDownloaded func(t
 			for i, album := range m.albums {
 				s += albumRow(i, album, i == m.cursor, ac) + "\n"
 			}
+		} else {
+			s += dimStyle.Render("  No albums found.") + "\n"
 		}
 	default:
 		if len(m.results) > 0 {
@@ -487,6 +491,8 @@ func (m searchModel) View(width int, isLiked func(int) bool, isDownloaded func(t
 			for i, track := range m.results {
 				s += trackRow(i, track, i == m.cursor, isLiked(track.ID), isDownloaded(track), tc) + "\n"
 			}
+		} else {
+			s += dimStyle.Render("  No tracks found.") + "\n"
 		}
 	}
 
