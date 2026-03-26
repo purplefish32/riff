@@ -92,6 +92,7 @@ Follow these when modifying the TUI:
 go build -o riff .     # Build
 go run .               # Run
 go vet ./...           # Lint
+go test ./...          # Test
 ./riff --version       # Version check
 ```
 
