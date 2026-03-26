@@ -36,6 +36,11 @@ type queueAlbumMsg struct {
 	err    error
 }
 
+type playAlbumMsg struct {
+	tracks []types.Track
+	err    error
+}
+
 type albumArtMsg struct {
 	coverID string
 	art     string
@@ -727,6 +732,28 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.online = true
 		a = a.withQueueAddAll(msg.tracks)
 		return a, nil
+
+	case playAlbumMsg:
+		if msg.err != nil {
+			if isNetworkError(msg.err) {
+				a.online = false
+			}
+			a.err = fmt.Errorf("%s", friendlyError(msg.err))
+			return a, nil
+		}
+		a.online = true
+		if len(msg.tracks) == 0 {
+			a = a.withStatus("Album has no tracks")
+			return a, nil
+		}
+		a.tracklist = msg.tracks
+		a.activePlaylist = ""
+		a.playlistDirty = false
+		a.queueCursor = 0
+		a.queueScrollOffset = 0
+		a.activeTab = tabQueue
+		a.saveQueue()
+		return a.playPos(0)
 
 	case DownloadUpdateMsg:
 		return a, nil

@@ -159,6 +159,17 @@ func (a App) updateSearchBrowse(msg tea.KeyPressMsg) (App, tea.Cmd) {
 			openBrowser(fmt.Sprintf("https://monochrome.tf/album/%d", track.Album.ID))
 		}
 		return a, nil
+	case "b":
+		if target := a.targetTrackOrNowPlaying(); target != nil {
+			albumID := target.Album.ID
+			a = a.withStatus(fmt.Sprintf("Loading album: %s", target.Album.Title))
+			return a, func() tea.Msg {
+				tracks, err := a.client.GetAlbumTracks(albumID)
+				return playAlbumMsg{tracks: tracks, err: err}
+			}
+		}
+		a = a.withStatus("No track selected")
+		return a, nil
 	case "space":
 		if a.nowPlaying.track != nil {
 			a.nowPlaying.paused = !a.nowPlaying.paused
@@ -708,6 +719,17 @@ func (a App) updateNormal(msg tea.KeyPressMsg) (App, tea.Cmd) {
 		if target := a.targetTrackOrNowPlaying(); target != nil {
 			openBrowser(fmt.Sprintf("https://monochrome.tf/album/%d", target.Album.ID))
 		}
+		return a, nil
+	case "b":
+		if target := a.targetTrackOrNowPlaying(); target != nil {
+			albumID := target.Album.ID
+			a = a.withStatus(fmt.Sprintf("Loading album: %s", target.Album.Title))
+			return a, func() tea.Msg {
+				tracks, err := a.client.GetAlbumTracks(albumID)
+				return playAlbumMsg{tracks: tracks, err: err}
+			}
+		}
+		a = a.withStatus("No track selected")
 		return a, nil
 	case "Q":
 		a.quality = (a.quality + 1) % len(qualities)
