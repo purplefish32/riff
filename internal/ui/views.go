@@ -367,12 +367,14 @@ func (a App) View() tea.View {
 	separator := dimStyle.Render(strings.Repeat("─", a.width))
 
 	// --- Footer (fixed bottom) ---
+	// At small heights, skip download status to save space
+	compact := a.height < 22
 	var footerParts []string
 	footerParts = append(footerParts, separator)
 	if statusLine != "" {
 		footerParts = append(footerParts, statusLine)
 	}
-	if dlStatus != "" {
+	if dlStatus != "" && !compact {
 		footerParts = append(footerParts, dlStatus)
 	}
 	footerParts = append(footerParts, np, help)
