@@ -195,6 +195,14 @@ func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedS
 	}
 }
 
+// visibleRows returns the number of content rows available for track lists.
+func (a App) visibleRows() int {
+	v := a.height - 12
+	if v < 1 {
+		return 1
+	}
+	return v
+}
 
 func newFilterInput() textinput.Model {
 	ti := textinput.New()
@@ -799,20 +807,12 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 	case "up", "k":
 		if a.activeTab == tabQueue && a.queueCursor > 0 {
 			a.queueCursor--
-			visibleRows := a.height - 12
-			if visibleRows < 1 {
-				visibleRows = 1
-			}
 			if a.queueCursor < a.queueScrollOffset {
 				a.queueScrollOffset = a.queueCursor
 			}
 		}
 		if a.activeTab == tabRecent && a.recentCursor > 0 {
 			a.recentCursor--
-			visibleRows := a.height - 12
-			if visibleRows < 1 {
-				visibleRows = 1
-			}
 			if a.recentCursor < a.recentScrollOffset {
 				a.recentScrollOffset = a.recentCursor
 			}
@@ -824,10 +824,7 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 	case "down", "j":
 		if a.activeTab == tabQueue && a.queueCursor < len(a.tracklist)-1 {
 			a.queueCursor++
-			visibleRows := a.height - 12
-			if visibleRows < 1 {
-				visibleRows = 1
-			}
+			visibleRows := a.visibleRows()
 			if a.queueCursor >= a.queueScrollOffset+visibleRows {
 				a.queueScrollOffset = a.queueCursor - visibleRows + 1
 			}
@@ -836,10 +833,7 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 			tracks := a.recent.List()
 			if a.recentCursor < len(tracks)-1 {
 				a.recentCursor++
-				visibleRows := a.height - 12
-				if visibleRows < 1 {
-					visibleRows = 1
-				}
+				visibleRows := a.visibleRows()
 				if a.recentCursor >= a.recentScrollOffset+visibleRows {
 					a.recentScrollOffset = a.recentCursor - visibleRows + 1
 				}
@@ -1218,10 +1212,7 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 		a.pendingG = true
 		return a, nil
 	case "ctrl+d":
-		visibleRows := a.height - 12
-		if visibleRows < 1 {
-			visibleRows = 1
-		}
+		visibleRows := a.visibleRows()
 		halfPage := visibleRows / 2
 		if halfPage < 1 {
 			halfPage = 1
@@ -1249,10 +1240,7 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 		}
 		return a, nil
 	case "ctrl+u":
-		visibleRows := a.height - 12
-		if visibleRows < 1 {
-			visibleRows = 1
-		}
+		visibleRows := a.visibleRows()
 		halfPage := visibleRows / 2
 		if halfPage < 1 {
 			halfPage = 1
@@ -1277,10 +1265,7 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 		}
 		return a, nil
 	case "G":
-		visibleRows := a.height - 12
-		if visibleRows < 1 {
-			visibleRows = 1
-		}
+		visibleRows := a.visibleRows()
 		if a.activeTab == tabQueue && len(a.tracklist) > 0 {
 			a.queueCursor = len(a.tracklist) - 1
 			if a.queueCursor >= a.queueScrollOffset+visibleRows {
@@ -1324,10 +1309,7 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 				a.trackPos = i
 			}
 			a.queueCursor = i + 1
-			visibleRows := a.height - 12
-			if visibleRows < 1 {
-				visibleRows = 1
-			}
+			visibleRows := a.visibleRows()
 			if a.queueCursor >= a.queueScrollOffset+visibleRows {
 				a.queueScrollOffset = a.queueCursor - visibleRows + 1
 			}
@@ -1359,10 +1341,7 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 		if a.trackPos >= 0 && a.trackPos < len(a.tracklist) {
 			a.queueCursor = a.trackPos
 			a.activeTab = tabQueue
-			visibleRows := a.height - 12
-			if visibleRows < 1 {
-				visibleRows = 1
-			}
+			visibleRows := a.visibleRows()
 			// Center the playing track in the viewport
 			a.queueScrollOffset = a.trackPos - visibleRows/2
 			if a.queueScrollOffset < 0 {
@@ -1475,10 +1454,7 @@ func (a App) execCommand(input string) (App, tea.Cmd) {
 						idx = len(a.tracklist) - 1
 					}
 					a.queueCursor = idx
-					visibleRows := a.height - 12
-					if visibleRows < 1 {
-						visibleRows = 1
-					}
+					visibleRows := a.visibleRows()
 					if a.queueCursor < a.queueScrollOffset {
 						a.queueScrollOffset = a.queueCursor
 					}
@@ -1922,10 +1898,6 @@ func (a App) updateFilter(msg tea.KeyMsg) (App, tea.Cmd) {
 			if cursorIdx > 0 {
 				newIdx := a.filteredIndices[cursorIdx-1]
 				a.queueCursor = newIdx
-				visibleRows := a.height - 12
-				if visibleRows < 1 {
-					visibleRows = 1
-				}
 				if a.queueCursor < a.queueScrollOffset {
 					a.queueScrollOffset = a.queueCursor
 				}
@@ -1944,10 +1916,7 @@ func (a App) updateFilter(msg tea.KeyMsg) (App, tea.Cmd) {
 			nextFI := cursorIdx + 1
 			if nextFI < len(a.filteredIndices) {
 				newIdx := a.filteredIndices[nextFI]
-				visibleRows := a.height - 12
-				if visibleRows < 1 {
-					visibleRows = 1
-				}
+				visibleRows := a.visibleRows()
 				a.queueCursor = newIdx
 				if a.queueCursor >= a.queueScrollOffset+visibleRows {
 					a.queueScrollOffset = a.queueCursor - visibleRows + 1
@@ -1978,10 +1947,7 @@ func (a App) updateFilter(msg tea.KeyMsg) (App, tea.Cmd) {
 	// Jump cursor to first match
 	if len(a.filteredIndices) > 0 {
 		newIdx := a.filteredIndices[0]
-		visibleRows := a.height - 12
-		if visibleRows < 1 {
-			visibleRows = 1
-		}
+		visibleRows := a.visibleRows()
 		if a.activeTab == tabQueue {
 			a.queueCursor = newIdx
 			if a.queueCursor >= a.queueScrollOffset+visibleRows {
@@ -2012,20 +1978,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.MouseButtonWheelUp:
 			if a.activeTab == tabQueue && a.queueCursor > 0 {
 				a.queueCursor--
-				visibleRows := a.height - 12
-				if visibleRows < 1 {
-					visibleRows = 1
-				}
 				if a.queueCursor < a.queueScrollOffset {
 					a.queueScrollOffset = a.queueCursor
 				}
 			}
 			if a.activeTab == tabRecent && a.recentCursor > 0 {
 				a.recentCursor--
-				visibleRows := a.height - 12
-				if visibleRows < 1 {
-					visibleRows = 1
-				}
 				if a.recentCursor < a.recentScrollOffset {
 					a.recentScrollOffset = a.recentCursor
 				}
@@ -2033,10 +1991,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.MouseButtonWheelDown:
 			if a.activeTab == tabQueue && a.queueCursor < len(a.tracklist)-1 {
 				a.queueCursor++
-				visibleRows := a.height - 12
-				if visibleRows < 1 {
-					visibleRows = 1
-				}
+				visibleRows := a.visibleRows()
 				if a.queueCursor >= a.queueScrollOffset+visibleRows {
 					a.queueScrollOffset = a.queueCursor - visibleRows + 1
 				}
@@ -2045,10 +2000,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				tracks := a.recent.List()
 				if a.recentCursor < len(tracks)-1 {
 					a.recentCursor++
-					visibleRows := a.height - 12
-					if visibleRows < 1 {
-						visibleRows = 1
-					}
+					visibleRows := a.visibleRows()
 					if a.recentCursor >= a.recentScrollOffset+visibleRows {
 						a.recentScrollOffset = a.recentCursor - visibleRows + 1
 					}
@@ -2349,10 +2301,7 @@ func (a App) renderQueueView() string {
 		return dimStyle.Render("  Queue is empty. Press 'a' on a track to add it.")
 	}
 
-	visibleRows := a.height - 12
-	if visibleRows < 1 {
-		visibleRows = 1
-	}
+	visibleRows := a.visibleRows()
 
 	tc := computeTrackCols(a.width)
 	s := ""
@@ -2478,10 +2427,7 @@ func (a App) renderRecentView() string {
 		return dimStyle.Render("  No recently played tracks yet.")
 	}
 
-	visibleRows := a.height - 12
-	if visibleRows < 1 {
-		visibleRows = 1
-	}
+	visibleRows := a.visibleRows()
 
 	tc := computeTrackCols(a.width)
 
@@ -2656,7 +2602,7 @@ func (a App) View() string {
 			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, savePopup)
 		} else {
 			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, savePopup,
-				lipgloss.WithWhitespaceBackground(lipgloss.Color("#0D0D0D")),
+				lipgloss.WithWhitespaceBackground(bgColor),
 			)
 		}
 
@@ -2666,7 +2612,7 @@ func (a App) View() string {
 			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, renamePopup)
 		} else {
 			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, renamePopup,
-				lipgloss.WithWhitespaceBackground(lipgloss.Color("#0D0D0D")),
+				lipgloss.WithWhitespaceBackground(bgColor),
 			)
 		}
 
@@ -2679,7 +2625,7 @@ func (a App) View() string {
 			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, confirmPopup)
 		} else {
 			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, confirmPopup,
-				lipgloss.WithWhitespaceBackground(lipgloss.Color("#0D0D0D")),
+				lipgloss.WithWhitespaceBackground(bgColor),
 			)
 		}
 
@@ -2712,7 +2658,7 @@ func (a App) View() string {
 			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, addPopup)
 		} else {
 			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, addPopup,
-				lipgloss.WithWhitespaceBackground(lipgloss.Color("#0D0D0D")),
+				lipgloss.WithWhitespaceBackground(bgColor),
 			)
 		}
 
@@ -2757,7 +2703,7 @@ func (a App) View() string {
 			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, helpOverlay)
 		} else {
 			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, helpOverlay,
-				lipgloss.WithWhitespaceBackground(lipgloss.Color("#0D0D0D")),
+				lipgloss.WithWhitespaceBackground(bgColor),
 			)
 		}
 
@@ -2774,7 +2720,7 @@ func (a App) View() string {
 			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, popup)
 		} else {
 			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, popup,
-				lipgloss.WithWhitespaceBackground(lipgloss.Color("#0D0D0D")),
+				lipgloss.WithWhitespaceBackground(bgColor),
 			)
 		}
 
