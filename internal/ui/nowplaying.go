@@ -100,12 +100,16 @@ func (m nowPlayingModel) View(width int) string {
 		if remaining < 0 {
 			remaining = 0
 		}
-		leftTime = "-" + formatTime(remaining)
+		leftTime = "−" + formatTime(remaining)
+	}
+	rightTime := formatTime(m.duration)
+	if m.showRemaining {
+		rightTime = formatTime(m.duration) + " ↺"
 	}
 	line3 := fmt.Sprintf("  %s %s %s",
 		dimStyle.Render(leftTime),
 		m.progress.ViewAs(pct),
-		dimStyle.Render(formatTime(m.duration)),
+		dimStyle.Render(rightTime),
 	)
 
 	if m.showAlbumArt && !noColor && m.albumArt != "" {
