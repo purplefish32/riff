@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"image"
 	"image/color"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 )
 
 // artCache caches rendered art strings by coverID+size key.
@@ -36,11 +38,20 @@ func fetchAlbumArt(coverID string, cols, rows int) string {
 	urlCover := strings.ReplaceAll(coverID, "-", "/")
 	imgURL := fmt.Sprintf("https://resources.tidal.com/images/%s/80x80.jpg", urlCover)
 
-	resp, err := http.Get(imgURL) //nolint:noctx
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, imgURL, nil)
+	if err != nil {
+		return ""
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return ""
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
 
 	img, _, err := image.Decode(resp.Body)
 	if err != nil {
