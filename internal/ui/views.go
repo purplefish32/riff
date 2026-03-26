@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/purplefish32/riff/internal/types"
 )
 
@@ -280,7 +281,7 @@ func (a App) renderPlaylistsView() string {
 	return s
 }
 
-func (a App) View() string {
+func (a App) View() tea.View {
 	// --- Header ---
 	var header string
 	if a.height < 20 {
@@ -393,7 +394,7 @@ func (a App) View() string {
 			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, savePopup)
 		} else {
 			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, savePopup,
-				lipgloss.WithWhitespaceBackground(bgColor),
+				lipgloss.WithWhitespaceStyle(lipgloss.NewStyle().Background(bgColor)),
 			)
 		}
 
@@ -403,7 +404,7 @@ func (a App) View() string {
 			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, renamePopup)
 		} else {
 			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, renamePopup,
-				lipgloss.WithWhitespaceBackground(bgColor),
+				lipgloss.WithWhitespaceStyle(lipgloss.NewStyle().Background(bgColor)),
 			)
 		}
 
@@ -416,7 +417,7 @@ func (a App) View() string {
 			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, confirmPopup)
 		} else {
 			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, confirmPopup,
-				lipgloss.WithWhitespaceBackground(bgColor),
+				lipgloss.WithWhitespaceStyle(lipgloss.NewStyle().Background(bgColor)),
 			)
 		}
 
@@ -449,7 +450,7 @@ func (a App) View() string {
 			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, addPopup)
 		} else {
 			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, addPopup,
-				lipgloss.WithWhitespaceBackground(bgColor),
+				lipgloss.WithWhitespaceStyle(lipgloss.NewStyle().Background(bgColor)),
 			)
 		}
 
@@ -494,7 +495,7 @@ func (a App) View() string {
 			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, helpOverlay)
 		} else {
 			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, helpOverlay,
-				lipgloss.WithWhitespaceBackground(bgColor),
+				lipgloss.WithWhitespaceStyle(lipgloss.NewStyle().Background(bgColor)),
 			)
 		}
 
@@ -511,7 +512,7 @@ func (a App) View() string {
 			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, popup)
 		} else {
 			content = lipgloss.Place(a.width, contentHeight, lipgloss.Center, lipgloss.Center, popup,
-				lipgloss.WithWhitespaceBackground(bgColor),
+				lipgloss.WithWhitespaceStyle(lipgloss.NewStyle().Background(bgColor)),
 			)
 		}
 
@@ -531,7 +532,10 @@ func (a App) View() string {
 		content = lipgloss.NewStyle().Height(contentHeight).Render(tabContent)
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left, topFixed, content, footer)
+	v := tea.NewView(lipgloss.JoinVertical(lipgloss.Left, topFixed, content, footer))
+	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
+	return v
 }
 
 func (a App) contextHelp() string {

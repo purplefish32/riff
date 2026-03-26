@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/purplefish32/riff/internal/types"
 )
 
-func (a App) updateHelp(msg tea.KeyMsg) (App, tea.Cmd) {
+func (a App) updateHelp(msg tea.KeyPressMsg) (App, tea.Cmd) {
 	switch msg.String() {
 	case "esc", "?":
 		a.mode = modeNormal
@@ -16,7 +16,7 @@ func (a App) updateHelp(msg tea.KeyMsg) (App, tea.Cmd) {
 	return a, nil
 }
 
-func (a App) updateSearchInput(msg tea.KeyMsg) (App, tea.Cmd) {
+func (a App) updateSearchInput(msg tea.KeyPressMsg) (App, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c":
 		return a, tea.Quit
@@ -59,7 +59,7 @@ func (a App) updateSearchInput(msg tea.KeyMsg) (App, tea.Cmd) {
 	return a, cmd
 }
 
-func (a App) updateSearchBrowse(msg tea.KeyMsg) (App, tea.Cmd) {
+func (a App) updateSearchBrowse(msg tea.KeyPressMsg) (App, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c", "q":
 		return a, tea.Quit
@@ -159,7 +159,7 @@ func (a App) updateSearchBrowse(msg tea.KeyMsg) (App, tea.Cmd) {
 			openBrowser(fmt.Sprintf("https://monochrome.tf/album/%d", track.Album.ID))
 		}
 		return a, nil
-	case " ":
+	case "space":
 		if a.nowPlaying.track != nil {
 			a.nowPlaying.paused = !a.nowPlaying.paused
 			a.player.TogglePause()
@@ -292,7 +292,7 @@ func (a App) updateSearchBrowse(msg tea.KeyMsg) (App, tea.Cmd) {
 	return a, cmd
 }
 
-func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
+func (a App) updateNormal(msg tea.KeyPressMsg) (App, tea.Cmd) {
 	// Clear pending g on any non-g key
 	if msg.String() != "g" && a.pendingG {
 		a.pendingG = false
@@ -533,7 +533,7 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 			}
 		}
 		return a, nil
-	case " ":
+	case "space":
 		if a.nowPlaying.track != nil {
 			a.nowPlaying.paused = !a.nowPlaying.paused
 			a.player.TogglePause()
@@ -903,7 +903,7 @@ func (a App) updateNormal(msg tea.KeyMsg) (App, tea.Cmd) {
 	return a, nil
 }
 
-func (a App) updateCommand(msg tea.KeyMsg) (App, tea.Cmd) {
+func (a App) updateCommand(msg tea.KeyPressMsg) (App, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		a.cmdInput.Blur()
@@ -919,7 +919,7 @@ func (a App) updateCommand(msg tea.KeyMsg) (App, tea.Cmd) {
 	return a, cmd
 }
 
-func (a App) updateSavePlaylist(msg tea.KeyMsg) (App, tea.Cmd) {
+func (a App) updateSavePlaylist(msg tea.KeyPressMsg) (App, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		a.saveInput.Blur()
@@ -950,7 +950,7 @@ func (a App) updateSavePlaylist(msg tea.KeyMsg) (App, tea.Cmd) {
 	return a, cmd
 }
 
-func (a App) updateConfirmDelete(msg tea.KeyMsg) (App, tea.Cmd) {
+func (a App) updateConfirmDelete(msg tea.KeyPressMsg) (App, tea.Cmd) {
 	switch msg.String() {
 	case "y", "enter":
 		a.playlists.Delete(a.deleteTarget)
@@ -970,7 +970,7 @@ func (a App) updateConfirmDelete(msg tea.KeyMsg) (App, tea.Cmd) {
 	return a, nil
 }
 
-func (a App) updateAddToPlaylist(msg tea.KeyMsg) (App, tea.Cmd) {
+func (a App) updateAddToPlaylist(msg tea.KeyPressMsg) (App, tea.Cmd) {
 	// Creating new playlist: text input mode
 	if a.addToCreating {
 		switch msg.String() {
@@ -1038,7 +1038,7 @@ func (a App) updateAddToPlaylist(msg tea.KeyMsg) (App, tea.Cmd) {
 	return a, nil
 }
 
-func (a App) updateRenamePlaylist(msg tea.KeyMsg) (App, tea.Cmd) {
+func (a App) updateRenamePlaylist(msg tea.KeyPressMsg) (App, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		a.renameInput.Blur()
@@ -1102,7 +1102,7 @@ func (a App) computeFilteredIndices() App {
 	return a
 }
 
-func (a App) updateFilter(msg tea.KeyMsg) (App, tea.Cmd) {
+func (a App) updateFilter(msg tea.KeyPressMsg) (App, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		a.filterInput.Blur()
