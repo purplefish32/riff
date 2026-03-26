@@ -78,7 +78,9 @@ func (s *LikedStore) save() {
 	if err != nil {
 		return
 	}
-	os.WriteFile(s.path, data, 0o644)
+	if err := os.WriteFile(s.path, data, 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to save liked tracks: %s\n", err)
+	}
 	s.syncPlaylist()
 }
 
@@ -95,5 +97,7 @@ func (s *LikedStore) syncPlaylist() {
 	if err != nil {
 		return
 	}
-	os.WriteFile(filepath.Join(dir, "liked.json"), data, 0o644)
+	if err := os.WriteFile(filepath.Join(dir, "liked.json"), data, 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to sync liked playlist: %s\n", err)
+	}
 }

@@ -161,8 +161,8 @@ func (p *Player) Play(url string) error {
 	if err != nil {
 		return err
 	}
-	p.command("set_property", "pause", false)
-	return nil
+	_, err = p.command("set_property", "pause", false)
+	return err
 }
 
 func (p *Player) TogglePause() error {

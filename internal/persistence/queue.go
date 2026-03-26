@@ -51,7 +51,9 @@ func (s *QueueStore) Save(tracks []types.Track, position int) {
 	if err != nil {
 		return
 	}
-	os.WriteFile(s.path, data, 0o644)
+	if err := os.WriteFile(s.path, data, 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to save queue: %s\n", err)
+	}
 }
 
 func (s *QueueStore) SaveUIState(activeTab, queueCursor, likedCursor int) {
@@ -63,5 +65,7 @@ func (s *QueueStore) SaveUIState(activeTab, queueCursor, likedCursor int) {
 	if err != nil {
 		return
 	}
-	os.WriteFile(s.path, data, 0o644)
+	if err := os.WriteFile(s.path, data, 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to save UI state: %s\n", err)
+	}
 }

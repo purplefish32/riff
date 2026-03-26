@@ -59,5 +59,7 @@ func (s *RecentStore) Save() {
 	if err != nil {
 		return
 	}
-	os.WriteFile(s.path, data, 0o644)
+	if err := os.WriteFile(s.path, data, 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to save recent tracks: %s\n", err)
+	}
 }

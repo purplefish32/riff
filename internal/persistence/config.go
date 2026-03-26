@@ -58,7 +58,9 @@ func (c *Config) Save() {
 	if err != nil {
 		return
 	}
-	os.WriteFile(c.path, data, 0o644)
+	if err := os.WriteFile(c.path, data, 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to save config: %s\n", err)
+	}
 }
 
 func (c *Config) QualityIndex() int {
