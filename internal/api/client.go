@@ -117,6 +117,25 @@ func (c *Client) SearchArtists(query string) ([]types.ArtistFull, error) {
 	return result.Data.Artists.Items, nil
 }
 
+func (c *Client) GetSimilarArtists(artistID int) ([]types.ArtistFull, error) {
+	resp, err := c.get(fmt.Sprintf("/artist/similar/?id=%d", artistID))
+	if err != nil {
+		return nil, fmt.Errorf("similar artists request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("similar artists returned status %d", resp.StatusCode)
+	}
+
+	var result types.ArtistSearchResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decoding similar artists: %w", err)
+	}
+
+	return result.Data.Artists.Items, nil
+}
+
 func (c *Client) SearchAlbums(query string) ([]types.AlbumFull, error) {
 	resp, err := c.get(fmt.Sprintf("/search/?al=%s", url.QueryEscape(query)))
 	if err != nil {

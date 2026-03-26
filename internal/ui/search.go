@@ -19,17 +19,18 @@ const (
 )
 
 type searchModel struct {
-	input         textinput.Model
-	mode          searchMode
-	results       []types.Track
-	albums        []types.AlbumFull
-	artists       []types.ArtistFull
-	albumTracks   []types.Track
-	albumTitle    string
-	cursor        int
-	loading       bool
-	searchHistory []string
-	historyIdx    int
+	input          textinput.Model
+	mode           searchMode
+	results        []types.Track
+	albums         []types.AlbumFull
+	artists        []types.ArtistFull
+	albumTracks    []types.Track
+	albumTitle     string
+	cursor         int
+	loading        bool
+	searchHistory  []string
+	historyIdx     int
+	browseArtistID int // artist ID when browsing via "more from artist" (for similar artists tab)
 }
 
 type searchResultMsg struct {

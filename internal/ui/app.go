@@ -41,6 +41,17 @@ type albumArtMsg struct {
 	art     string
 }
 
+type moreArtistAlbumsMsg struct {
+	albums   []types.AlbumFull
+	artistID int
+	err      error
+}
+
+type similarArtistsMsg struct {
+	artists []types.ArtistFull
+	err     error
+}
+
 var qualities = []string{"LOW", "HIGH", "LOSSLESS", "HI_RES"}
 
 var spinnerFrames = []string{"▁", "▂", "▃", "▄", "▅", "▆", "▇", "█", "▇", "▆", "▅", "▄", "▃", "▂"}
@@ -726,6 +737,34 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		a.online = true
 		a = a.withQueueAddAll(msg.tracks)
+		return a, nil
+
+	case moreArtistAlbumsMsg:
+		a.search.loading = false
+		if msg.err != nil {
+			if isNetworkError(msg.err) {
+				a.online = false
+			}
+			a.err = fmt.Errorf("%s", friendlyError(msg.err))
+			return a, nil
+		}
+		a.online = true
+		a.search.albums = msg.albums
+		a.search.mode = modeAlbum
+		a.search.cursor = 0
+		a.search.browseArtistID = msg.artistID
+		a.mode = modeSearchBrowse
+		return a, nil
+
+	case similarArtistsMsg:
+		a.search.loading = false
+		if msg.err != nil {
+			a = a.withStatus("Similar artists unavailable")
+			return a, nil
+		}
+		a.search.artists = msg.artists
+		a.search.mode = modeArtist
+		a.search.cursor = 0
 		return a, nil
 
 	case DownloadUpdateMsg:
