@@ -2861,7 +2861,6 @@ func sendTrackNotification(track types.Track) {
 				"-subtitle", artist,
 				"-message", title + " — " + album,
 				"-group", "riff",
-				"-sender", "com.apple.Music",
 			}
 			// Download cover for the notification
 			if cover := track.Album.Cover; cover != "" {
