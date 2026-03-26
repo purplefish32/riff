@@ -385,10 +385,6 @@ func (a App) switchTab(tab viewTab) (App, bool) {
 	if tab == tabPlaylists {
 		a = a.refreshPlaylists()
 	}
-	if tab == tabRecent {
-		a.recentCursor = 0
-		a.recentScrollOffset = 0
-	}
 	return a, true
 }
 
