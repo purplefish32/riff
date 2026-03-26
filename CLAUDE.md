@@ -13,7 +13,11 @@ riff/
 │   ├── player/
 │   │   └── mpv.go               # mpv IPC socket control (play, pause, stop, seek, volume, position)
 │   ├── ui/
-│   │   ├── app.go               # Root Bubble Tea model, tab navigation, key handling, commands
+│   │   ├── app.go               # Root model, struct, NewApp, Init, Update, shared helpers
+│   │   ├── keyhandlers.go       # Key event handlers per input mode (normal, search, filter, etc.)
+│   │   ├── commands.go          # Vim-style : command parser (execCommand)
+│   │   ├── views.go             # View(), tab bar, queue/recent/playlist renderers, help overlay
+│   │   ├── notifications.go     # System notifications, browser open, network error detection
 │   │   ├── search.go            # Search popup (tracks/albums/artists), album browse
 │   │   ├── nowplaying.go        # Now playing bar with progress
 │   │   ├── albumart.go          # Album art fetching and sixel/block rendering
