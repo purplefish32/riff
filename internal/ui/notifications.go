@@ -27,6 +27,21 @@ func isNetworkError(err error) bool {
 		strings.Contains(s, "all instances failed")
 }
 
+// friendlyError returns a user-facing error message, sanitizing raw Go errors.
+func friendlyError(err error) string {
+	if err == nil {
+		return ""
+	}
+	if isNetworkError(err) {
+		return "Network error — check your connection"
+	}
+	s := err.Error()
+	if strings.Contains(s, "context deadline exceeded") {
+		return "Request timed out — try again"
+	}
+	return err.Error()
+}
+
 func sendTrackNotification(track types.Track) {
 	title := track.Title
 	artist := track.Artist.Name

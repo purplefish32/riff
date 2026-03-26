@@ -160,8 +160,17 @@ func TestSwitchTab(t *testing.T) {
 	if a.activeTab != tabRecent {
 		t.Errorf("activeTab = %d, want %d", a.activeTab, tabRecent)
 	}
-	if a.recentCursor != 0 {
-		t.Error("recentCursor should reset to 0")
+}
+
+func TestSwitchTabPreservesRecentCursor(t *testing.T) {
+	a := testApp(t, sampleTracks(3))
+	a.recentCursor = 5
+	a.recentScrollOffset = 2
+
+	a, _ = a.switchTab(tabQueue)
+	a, _ = a.switchTab(tabRecent)
+	if a.recentCursor != 5 {
+		t.Errorf("recentCursor = %d, want 5 (should be preserved)", a.recentCursor)
 	}
 }
 

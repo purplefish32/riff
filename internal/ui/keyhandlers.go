@@ -892,6 +892,8 @@ func (a App) updateNormal(msg tea.KeyPressMsg) (App, tea.Cmd) {
 				}
 			}
 			a = a.withStatus("Jumped to now playing")
+		} else {
+			a = a.withStatus("Nothing playing")
 		}
 		return a, nil
 	case ":":

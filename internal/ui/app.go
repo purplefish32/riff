@@ -187,6 +187,51 @@ func NewApp(client *api.Client, player *player.Player, likes *persistence.LikedS
 	}
 }
 
+// tabAtX returns which tab a horizontal pixel position falls on,
+// using the same label logic as renderTabBar for accurate hit targets.
+func (a App) tabAtX(x int) (viewTab, bool) {
+	tabs := []viewTab{tabQueue, tabRecent, tabPlaylists}
+	labels := a.tabLabels()
+	offset := 2 // leading "  " in renderTabBar
+	for i, label := range labels {
+		w := len(label) + 2 + 1 // " label " + "│"
+		if x < offset+w {
+			return tabs[i], true
+		}
+		offset += w
+	}
+	return tabPlaylists, true // click past last tab → last tab
+}
+
+// tabLabels returns the display labels for each tab, matching renderTabBar.
+func (a App) tabLabels() []string {
+	qLabel := "Queue"
+	if len(a.tracklist) > 0 {
+		if a.activePlaylist != "" {
+			dirty := ""
+			if a.playlistDirty {
+				dirty = "*"
+			}
+			qLabel = fmt.Sprintf("Queue [%s%s](%d)", a.activePlaylist, dirty, len(a.tracklist))
+		} else {
+			qLabel = fmt.Sprintf("Queue(%d)", len(a.tracklist))
+		}
+	}
+	rLabel := "Recent"
+	if a.recent != nil {
+		if n := len(a.recent.List()); n > 0 {
+			rLabel = fmt.Sprintf("Recent(%d)", n)
+		}
+	}
+	pLabel := "Playlists"
+	if a.playlists != nil {
+		if names := a.playlists.List(); len(names) > 0 {
+			pLabel = fmt.Sprintf("Playlists(%d)", len(names))
+		}
+	}
+	return []string{qLabel, rLabel, pLabel}
+}
+
 // visibleRows returns the number of content rows available for track lists.
 func (a App) visibleRows() int {
 	v := a.height - 12
@@ -339,10 +384,6 @@ func (a App) switchTab(tab viewTab) (App, bool) {
 	a.activeTab = tab
 	if tab == tabPlaylists {
 		a = a.refreshPlaylists()
-	}
-	if tab == tabRecent {
-		a.recentCursor = 0
-		a.recentScrollOffset = 0
 	}
 	return a, true
 }
@@ -515,17 +556,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m := msg.Mouse()
 			// Tab bar is at row 2 (0-indexed)
 			if m.Y == 2 {
-				var target viewTab
-				if m.X < 15 {
-					target = tabQueue
-				} else if m.X < 26 {
-					target = tabRecent
-				} else {
-					target = tabPlaylists
-				}
-				a, ok := a.switchTab(target)
-				if ok {
-					a.saveUIState()
+				if target, ok := a.tabAtX(m.X); ok {
+					a, ok = a.switchTab(target)
+					if ok {
+						a.saveUIState()
+					}
 				}
 			} else if m.Y >= 5 {
 				// Content area starts around row 5 (header row 4, then tracks)
@@ -635,7 +670,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			a.loading = false
 			a.streamRetries = 0
-			a.err = msg.err
+			a.err = fmt.Errorf("%s", friendlyError(msg.err))
 			return a, nil
 		}
 		a.loading = false
@@ -686,7 +721,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if isNetworkError(msg.err) {
 				a.online = false
 			}
-			a.err = msg.err
+			a.err = fmt.Errorf("%s", friendlyError(msg.err))
 			return a, nil
 		}
 		a.online = true
@@ -703,7 +738,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case errMsg:
-		a.err = msg.err
+		a.err = fmt.Errorf("%s", friendlyError(msg.err))
 		return a, nil
 
 	case FifoCommandMsg:
