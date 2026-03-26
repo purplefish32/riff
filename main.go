@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -88,9 +89,17 @@ func main() {
 
 	// Create control FIFO for external commands (e.g., Stream Deck)
 	os.Remove(fifoPath)
+	fifoCtx, fifoCancel := context.WithCancel(context.Background())
+	defer fifoCancel()
 	if err := syscall.Mkfifo(fifoPath, 0o644); err == nil {
 		go func() {
 			for {
+				// Check if we should stop before blocking on Open
+				select {
+				case <-fifoCtx.Done():
+					return
+				default:
+				}
 				// Open blocks until a writer connects
 				f, err := os.Open(fifoPath)
 				if err != nil {

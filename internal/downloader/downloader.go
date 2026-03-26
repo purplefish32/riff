@@ -1,6 +1,7 @@
 package downloader
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -10,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/purplefish32/riff/internal/api"
 	"github.com/purplefish32/riff/internal/types"
@@ -219,7 +221,13 @@ func (d *Downloader) downloadTrack(track types.Track) {
 func (d *Downloader) downloadFile(url, path string) error {
 	os.MkdirAll(filepath.Dir(path), 0o755)
 
-	resp, err := http.Get(url)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}

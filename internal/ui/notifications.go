@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/purplefish32/riff/internal/types"
 )
@@ -63,11 +65,20 @@ func downloadCoverToTemp(coverID string) string {
 	urlCover := strings.ReplaceAll(coverID, "-", "/")
 	imgURL := fmt.Sprintf("https://resources.tidal.com/images/%s/320x320.jpg", urlCover)
 
-	resp, err := http.Get(imgURL)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, imgURL, nil)
+	if err != nil {
+		return ""
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return ""
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
 
 	tmp, err := os.CreateTemp("", "riff-cover-*.jpg")
 	if err != nil {
