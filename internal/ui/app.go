@@ -21,6 +21,9 @@ import (
 
 type errMsg struct{ err error }
 
+// FifoCommandMsg is sent when a command is received via the control FIFO.
+type FifoCommandMsg struct{ Command string }
+
 // DownloadUpdateMsg is sent when download status changes.
 type DownloadUpdateMsg struct{}
 
@@ -2229,6 +2232,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case errMsg:
 		a.err = msg.err
 		return a, nil
+
+	case FifoCommandMsg:
+		return a.execCommand(msg.Command)
 	}
 
 	// Pass non-key messages to search model (handles search result messages)

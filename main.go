@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -16,6 +18,8 @@ import (
 	"github.com/purplefish32/riff/internal/player"
 	"github.com/purplefish32/riff/internal/ui"
 )
+
+const fifoPath = "/tmp/riff.fifo"
 
 const version = "0.1.0"
 
@@ -81,6 +85,29 @@ func main() {
 	dl.SetOnUpdate(func() {
 		prog.Send(ui.DownloadUpdateMsg{})
 	})
+
+	// Create control FIFO for external commands (e.g., Stream Deck)
+	os.Remove(fifoPath)
+	if err := syscall.Mkfifo(fifoPath, 0o644); err == nil {
+		go func() {
+			for {
+				// Open blocks until a writer connects
+				f, err := os.Open(fifoPath)
+				if err != nil {
+					return
+				}
+				scanner := bufio.NewScanner(f)
+				for scanner.Scan() {
+					cmd := strings.TrimSpace(scanner.Text())
+					if cmd != "" {
+						prog.Send(ui.FifoCommandMsg{Command: cmd})
+					}
+				}
+				f.Close()
+			}
+		}()
+		defer os.Remove(fifoPath)
+	}
 
 	if _, err := prog.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
