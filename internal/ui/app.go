@@ -733,6 +733,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					})
 				}
 			}
+			// Write state file for external tools
+			a.writeStateFile()
 		}
 		return a, tick()
 
