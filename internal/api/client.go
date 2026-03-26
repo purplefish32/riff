@@ -166,6 +166,25 @@ func (c *Client) GetAlbumTracks(albumID int) ([]types.Track, error) {
 	return tracks, nil
 }
 
+func (c *Client) GetRecommendations(trackID int) ([]types.Track, error) {
+	resp, err := c.get(fmt.Sprintf("/recommendations/?id=%d", trackID))
+	if err != nil {
+		return nil, fmt.Errorf("recommendations request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("recommendations returned status %d", resp.StatusCode)
+	}
+
+	var result types.SearchResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decoding recommendations: %w", err)
+	}
+
+	return result.Data.Items, nil
+}
+
 func (c *Client) GetStreamURL(trackID int, quality string) (string, error) {
 	if quality == "" {
 		quality = "LOSSLESS"

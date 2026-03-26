@@ -4,3 +4,4 @@ riff
 *.so
 *.dylib
 .DS_Store
+.claude

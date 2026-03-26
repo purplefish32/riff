@@ -47,6 +47,11 @@ type albumArtMsg struct {
 	art     string
 }
 
+type radioTracksMsg struct {
+	tracks []types.Track
+	err    error
+}
+
 var qualities = []string{"LOW", "HIGH", "LOSSLESS", "HI_RES"}
 
 var spinnerFrames = []string{"▁", "▂", "▃", "▄", "▅", "▆", "▇", "█", "▇", "▆", "▅", "▄", "▃", "▂"}
@@ -133,6 +138,8 @@ type App struct {
 	shuffle          bool
 	shufflePlayed    map[int]bool // track indices played this shuffle pass
 	shuffleHistory   []int        // indices in order actually played (for prev)
+	radio            bool
+	radioFetching    bool // prevents duplicate fetches
 	notifications    bool
 	audioInfo        string
 	saveInput        textinput.Model
@@ -490,6 +497,7 @@ func (a App) syncNowPlaying() App {
 	a.nowPlaying.showAlbumArt = a.showAlbumArt
 	a.nowPlaying.repeat = a.repeat
 	a.nowPlaying.shuffle = a.shuffle
+	a.nowPlaying.radio = a.radio
 	if a.nowPlaying.track != nil {
 		a.nowPlaying.liked = a.likes.IsLiked(a.nowPlaying.track.ID)
 		a.nowPlaying.coverID = a.nowPlaying.track.Album.Cover
@@ -702,6 +710,18 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !a.online && a.tickCount%100 == 0 {
 				return a, tea.Batch(tick(), a.doPing())
 			}
+			// Radio auto-fetch: when 3 tracks from end, get more recommendations
+			if a.radio && !a.radioFetching && a.trackPos >= 0 {
+				remaining := len(a.tracklist) - a.trackPos - 1
+				if remaining <= 3 {
+					a.radioFetching = true
+					seedID := a.tracklist[a.trackPos].ID
+					return a, tea.Batch(tick(), func() tea.Msg {
+						tracks, err := a.client.GetRecommendations(seedID)
+						return radioTracksMsg{tracks: tracks, err: err}
+					})
+				}
+			}
 		}
 		return a, tick()
 
@@ -830,6 +850,21 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.activeTab = tabQueue
 		a.saveQueue()
 		return a.playPos(0)
+
+	case radioTracksMsg:
+		a.radioFetching = false
+		if msg.err != nil {
+			if isNetworkError(msg.err) {
+				a.online = false
+			}
+			return a, nil
+		}
+		if len(msg.tracks) > 0 {
+			a.tracklist = append(a.tracklist, msg.tracks...)
+			a.saveQueue()
+			a = a.withStatus(fmt.Sprintf("Radio: +%d tracks", len(msg.tracks)))
+		}
+		return a, nil
 
 	case DownloadUpdateMsg:
 		return a, nil

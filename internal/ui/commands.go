@@ -132,9 +132,18 @@ func (a App) execCommand(input string) (App, tea.Cmd) {
 	case "repeat":
 		a.repeat = !a.repeat
 		if a.repeat {
+			a.radio = false // mutually exclusive
 			return a.withStatus("Repeat: on ↻"), nil
 		}
 		return a.withStatus("Repeat: off"), nil
+	case "radio":
+		a.radio = !a.radio
+		if a.radio {
+			a.repeat = false // mutually exclusive
+			a.radioFetching = false
+			return a.withStatus("Radio: on ≈"), nil
+		}
+		return a.withStatus("Radio: off"), nil
 	case "lines":
 		a.showLineNumbers = !a.showLineNumbers
 		a.config.ShowLineNumbers = a.showLineNumbers
