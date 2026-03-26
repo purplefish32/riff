@@ -2,7 +2,10 @@ package ui
 
 import (
 	"fmt"
+	"io"
 	"math/rand"
+	"net/http"
+	"os"
 	"os/exec"
 	"runtime"
 	"strconv"
@@ -2191,7 +2194,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, a.fetchArt(coverID))
 			}
 			if a.notifications {
-				sendNotification("riff", fmt.Sprintf("%s — %s", track.Title, track.Artist.Name))
+				go sendTrackNotification(track)
 			}
 		}
 		return a, tea.Batch(cmds...)
@@ -2844,14 +2847,57 @@ func isNetworkError(err error) bool {
 		strings.Contains(s, "all instances failed")
 }
 
-func sendNotification(title, body string) {
+func sendTrackNotification(track types.Track) {
+	title := track.Title
+	artist := track.Artist.Name
+	album := track.Album.Title
+
 	switch runtime.GOOS {
 	case "darwin":
-		script := fmt.Sprintf(`display notification "%s" with title "%s"`, body, title)
+		// Try terminal-notifier first (supports album art)
+		if tn, err := exec.LookPath("terminal-notifier"); err == nil {
+			args := []string{
+				"-title", "riff",
+				"-subtitle", artist,
+				"-message", title + " — " + album,
+				"-group", "riff",
+			}
+			// Download cover for the notification
+			if cover := track.Album.Cover; cover != "" {
+				coverPath := downloadCoverToTemp(cover)
+				if coverPath != "" {
+					args = append(args, "-contentImage", coverPath)
+				}
+			}
+			exec.Command(tn, args...).Start()
+			return
+		}
+		// Fallback to osascript
+		script := fmt.Sprintf(`display notification "%s — %s" with title "riff" subtitle "%s"`,
+			title, album, artist)
 		exec.Command("osascript", "-e", script).Start()
 	case "linux":
-		exec.Command("notify-send", title, body).Start()
+		exec.Command("notify-send", "riff", fmt.Sprintf("%s — %s\n%s", title, artist, album)).Start()
 	}
+}
+
+func downloadCoverToTemp(coverID string) string {
+	urlCover := strings.ReplaceAll(coverID, "-", "/")
+	imgURL := fmt.Sprintf("https://resources.tidal.com/images/%s/320x320.jpg", urlCover)
+
+	resp, err := http.Get(imgURL)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+
+	tmp, err := os.CreateTemp("", "riff-cover-*.jpg")
+	if err != nil {
+		return ""
+	}
+	io.Copy(tmp, resp.Body)
+	tmp.Close()
+	return tmp.Name()
 }
 
 func openBrowser(url string) {
