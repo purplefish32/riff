@@ -184,15 +184,22 @@ func (a App) updateSearchBrowse(msg tea.KeyPressMsg) (App, tea.Cmd) {
 		}
 		return a, nil
 	case "M":
-		// Switch to similar artists (when browsing an artist)
-		if a.search.browseArtistID > 0 {
+		// Similar artists: use browseArtistID if set, otherwise fall back to current track
+		artistID := a.search.browseArtistID
+		if artistID == 0 {
+			if target := a.targetTrackOrNowPlaying(); target != nil {
+				artistID = target.Artist.ID
+			}
+		}
+		if artistID > 0 {
 			a.search.loading = true
-			artistID := a.search.browseArtistID
+			a.search.browseArtistID = artistID
 			return a, func() tea.Msg {
 				artists, err := a.client.GetSimilarArtists(artistID)
 				return similarArtistsMsg{artists: artists, err: err}
 			}
 		}
+		a = a.withStatus("No artist context")
 		return a, nil
 	case "space":
 		if a.nowPlaying.track != nil {
@@ -738,6 +745,19 @@ func (a App) updateNormal(msg tea.KeyPressMsg) (App, tea.Cmd) {
 			return a, func() tea.Msg {
 				albums, err := a.client.SearchAlbums(artistName)
 				return moreArtistAlbumsMsg{albums: albums, artistID: artistID, err: err}
+			}
+		}
+		a = a.withStatus("No track selected")
+		return a, nil
+	case "M":
+		if target := a.targetTrackOrNowPlaying(); target != nil {
+			artistID := target.Artist.ID
+			a.search.loading = true
+			a.search.browseArtistID = artistID
+			a = a.withStatus(fmt.Sprintf("Similar to %s", target.Artist.Name))
+			return a, func() tea.Msg {
+				artists, err := a.client.GetSimilarArtists(artistID)
+				return similarArtistsMsg{artists: artists, err: err}
 			}
 		}
 		a = a.withStatus("No track selected")
