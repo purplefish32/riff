@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/purplefish32/riff/internal/types"
 )
 
 func (a App) execCommand(input string) (App, tea.Cmd) {
@@ -170,10 +171,122 @@ func (a App) execCommand(input string) (App, tea.Cmd) {
 		return a.withStatus("Album art off"), nil
 	case "play", "p":
 		if len(args) > 0 {
-			// :play N — play track at line N
-			n, err := strconv.Atoi(args[0])
-			if err == nil && n >= 1 {
-				return a.playPos(n - 1)
+			switch args[0] {
+			case "liked":
+				if a.likes != nil && len(a.likes.Tracks) > 0 {
+					a.tracklist = append([]types.Track{}, a.likes.Tracks...)
+					a.trackPos = -1
+					a.queueCursor = 0
+					a.queueScrollOffset = 0
+					a.activePlaylist = ""
+					a.activeTab = tabQueue
+					a.saveQueue()
+					a = a.withStatus(fmt.Sprintf("Playing %d liked tracks", len(a.tracklist)))
+					return a.playPos(0)
+				}
+				return a.withStatus("No liked tracks"), nil
+			case "recent":
+				if a.recent == nil || len(a.recent.Tracks) == 0 {
+					return a.withStatus("No recent tracks"), nil
+				}
+				limit := 30
+				if len(args) > 1 {
+					if n, err := strconv.Atoi(args[1]); err == nil && n > 0 {
+						limit = n
+					}
+				}
+				tracks := a.recent.Tracks
+				if len(tracks) > limit {
+					tracks = tracks[:limit]
+				}
+				// Deduplicate by track ID (recent can have repeats)
+				seen := make(map[int]bool)
+				var unique []types.Track
+				for _, t := range tracks {
+					if !seen[t.ID] {
+						seen[t.ID] = true
+						unique = append(unique, t)
+					}
+				}
+				a.tracklist = unique
+				a.trackPos = -1
+				a.queueCursor = 0
+				a.queueScrollOffset = 0
+				a.activePlaylist = ""
+				a.activeTab = tabQueue
+				a.saveQueue()
+				a = a.withStatus(fmt.Sprintf("Playing %d recent tracks", len(unique)))
+				return a.playPos(0)
+			case "top":
+				if a.playCounts == nil || len(a.playCounts.Counts) == 0 {
+					return a.withStatus("No play history"), nil
+				}
+				limit := 50
+				if len(args) > 1 {
+					if n, err := strconv.Atoi(args[1]); err == nil && n > 0 {
+						limit = n
+					}
+				}
+				// Collect all known tracks from liked + recent
+				trackMap := make(map[int]types.Track)
+				if a.likes != nil {
+					for _, t := range a.likes.Tracks {
+						trackMap[t.ID] = t
+					}
+				}
+				if a.recent != nil {
+					for _, t := range a.recent.Tracks {
+						trackMap[t.ID] = t
+					}
+				}
+				for _, t := range a.tracklist {
+					trackMap[t.ID] = t
+				}
+				// Build sorted list by play count
+				type counted struct {
+					track types.Track
+					count int
+				}
+				var ranked []counted
+				for id, count := range a.playCounts.Counts {
+					if t, ok := trackMap[id]; ok {
+						ranked = append(ranked, counted{track: t, count: count})
+					}
+				}
+				// Sort descending by count
+				for i := 0; i < len(ranked)-1; i++ {
+					for j := i + 1; j < len(ranked); j++ {
+						if ranked[j].count > ranked[i].count {
+							ranked[i], ranked[j] = ranked[j], ranked[i]
+						}
+					}
+				}
+				if len(ranked) > limit {
+					ranked = ranked[:limit]
+				}
+				if len(ranked) == 0 {
+					return a.withStatus("No played tracks found"), nil
+				}
+				var tracks []types.Track
+				for _, r := range ranked {
+					tracks = append(tracks, r.track)
+				}
+				a.tracklist = tracks
+				a.trackPos = -1
+				a.queueCursor = 0
+				a.queueScrollOffset = 0
+				a.activePlaylist = ""
+				a.activeTab = tabQueue
+				a.saveQueue()
+				a = a.withStatus(fmt.Sprintf("Playing top %d tracks", len(tracks)))
+				return a.playPos(0)
+			default:
+				// :play N — play track at line N
+				n, err := strconv.Atoi(args[0])
+				if err == nil && n >= 1 {
+					return a.playPos(n - 1)
+				}
+				return a.withStatus("Usage: play [liked|recent [N]|top [N]|<line>]"), nil
 			}
 		}
 		// :play — play current cursor position
@@ -278,7 +391,7 @@ func (a App) execCommand(input string) (App, tea.Cmd) {
 		a.mode = modeHelp
 		return a, nil
 	case "commands":
-		return a.withStatus("q vol goto shuffle save load delete tab quality repeat lines playcounts art notifications seek next prev pause stop clear discard help"), nil
+		return a.withStatus("play liked|top|recent  shuffle radio reorder  vol quality  save load delete  goto seek next prev pause stop clear  help"), nil
 	case "save":
 		if a.playlists == nil {
 			return a.withStatus("Playlists unavailable"), nil

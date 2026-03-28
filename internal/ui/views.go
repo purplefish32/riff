@@ -567,7 +567,7 @@ func (a App) contextHelp() string {
 	case modeHelp:
 		return dimStyle.Render("  esc close")
 	case modeCommand:
-		return dimStyle.Render("  :help :vol :quality :shuffle :save :load :tab  enter run  esc cancel")
+		return dimStyle.Render("  :play liked|top|recent  :shuffle :radio :vol :save :load  enter run  esc cancel")
 	case modeFilter:
 		return dimStyle.Render("  type to filter  ↑↓ navigate  enter play  esc clear")
 	case modeSavePlaylist:
