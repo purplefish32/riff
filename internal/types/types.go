@@ -39,6 +39,12 @@ type ArtistSearchResponse struct {
 	} `json:"data"`
 }
 
+// SimilarArtistsResponse is the response from /artist/similar/.
+// Different structure from search: top-level "artists" array, not nested under "data".
+type SimilarArtistsResponse struct {
+	Artists []ArtistFull `json:"artists"`
+}
+
 type Track struct {
 	ID           int      `json:"id"`
 	Title        string   `json:"title"`

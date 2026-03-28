@@ -128,12 +128,12 @@ func (c *Client) GetSimilarArtists(artistID int) ([]types.ArtistFull, error) {
 		return nil, fmt.Errorf("similar artists returned status %d", resp.StatusCode)
 	}
 
-	var result types.ArtistSearchResponse
+	var result types.SimilarArtistsResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("decoding similar artists: %w", err)
 	}
 
-	return result.Data.Artists.Items, nil
+	return result.Artists, nil
 }
 
 func (c *Client) SearchAlbums(query string) ([]types.AlbumFull, error) {
