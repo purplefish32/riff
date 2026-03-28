@@ -28,7 +28,7 @@ type ArtistFull struct {
 	ID         int    `json:"id"`
 	Name       string `json:"name"`
 	Picture    string `json:"picture"`
-	Popularity int    `json:"popularity"`
+	Popularity float64 `json:"popularity"`
 }
 
 type ArtistSearchResponse struct {
