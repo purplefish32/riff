@@ -905,6 +905,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.search.artists = msg.artists
 		a.search.mode = modeArtist
 		a.search.cursor = 0
+		a.mode = modeSearchBrowse
 		return a, nil
 
 	case DownloadUpdateMsg:
