@@ -141,7 +141,20 @@ func (a App) execCommand(input string) (App, tea.Cmd) {
 		a.radio = !a.radio
 		if a.radio {
 			a.repeat = false // mutually exclusive
-			a.radioFetching = false
+			a.radioFetching = true
+			// Clear tracks after current position
+			if a.trackPos >= 0 && a.trackPos < len(a.tracklist)-1 {
+				a.tracklist = a.tracklist[:a.trackPos+1]
+				a.saveQueue()
+			}
+			// Fetch recommendations immediately
+			if a.trackPos >= 0 && a.trackPos < len(a.tracklist) {
+				seedID := a.tracklist[a.trackPos].ID
+				return a.withStatus("Radio: on ≈"), func() tea.Msg {
+					tracks, err := a.client.GetRecommendations(seedID)
+					return radioTracksMsg{tracks: tracks, err: err}
+				}
+			}
 			return a.withStatus("Radio: on ≈"), nil
 		}
 		return a.withStatus("Radio: off"), nil

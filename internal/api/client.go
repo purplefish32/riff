@@ -196,12 +196,16 @@ func (c *Client) GetRecommendations(trackID int) ([]types.Track, error) {
 		return nil, fmt.Errorf("recommendations returned status %d", resp.StatusCode)
 	}
 
-	var result types.SearchResponse
+	var result types.RecommendationsResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("decoding recommendations: %w", err)
 	}
 
-	return result.Data.Items, nil
+	var tracks []types.Track
+	for _, item := range result.Data.Items {
+		tracks = append(tracks, item.Track)
+	}
+	return tracks, nil
 }
 
 func (c *Client) GetStreamURL(trackID int, quality string) (string, error) {

@@ -798,8 +798,18 @@ func (a App) updateNormal(msg tea.KeyPressMsg) (App, tea.Cmd) {
 			a.radio = !a.radio
 			if a.radio {
 				a.repeat = false // mutually exclusive
-				a.radioFetching = false
+				a.radioFetching = true
+				// Clear tracks after current position so next track is a recommendation
+				if a.trackPos >= 0 && a.trackPos < len(a.tracklist)-1 {
+					a.tracklist = a.tracklist[:a.trackPos+1]
+					a.saveQueue()
+				}
+				seedID := target.ID
 				a = a.withStatus(fmt.Sprintf("Radio: on ≈ (from %s)", target.Title))
+				return a, func() tea.Msg {
+					tracks, err := a.client.GetRecommendations(seedID)
+					return radioTracksMsg{tracks: tracks, err: err}
+				}
 			} else {
 				a = a.withStatus("Radio: off")
 			}

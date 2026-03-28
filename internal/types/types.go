@@ -67,6 +67,16 @@ type SearchResponse struct {
 	} `json:"data"`
 }
 
+type RecommendationItem struct {
+	Track Track `json:"track"`
+}
+
+type RecommendationsResponse struct {
+	Data struct {
+		Items []RecommendationItem `json:"items"`
+	} `json:"data"`
+}
+
 type AlbumSearchResponse struct {
 	Data struct {
 		Albums struct {
